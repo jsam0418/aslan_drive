@@ -1,0 +1,8 @@
+FROM aslan_drive_base:latest
+
+WORKDIR /app
+
+EXPOSE 8000
+
+# Set the service-specific command
+CMD ["python3", "-m", "services.md_provider.main"]

@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: aslan_drive
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trading123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./generated/migration.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d aslan_drive"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - aslan_network
+
+  base_build:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.base
+    image: aslan_drive_base:latest
+    volumes:
+      - .:/app
+    networks:
+      - aslan_network
+
+  data_ingestion:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.data_ingestion
+    depends_on:
+      base_build:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
+    volumes:
+      - .:/app
+    networks:
+      - aslan_network
+    restart: unless-stopped
+
+  md_provider:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.md_provider
+    depends_on:
+      base_build:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    networks:
+      - aslan_network
+    restart: unless-stopped
+
+  health_check:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.health_check
+    depends_on:
+      base_build:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      data_ingestion:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      - .:/app
+    networks:
+      - aslan_network
+    restart: "no"
+
+volumes:
+  postgres_data:
+
+networks:
+  aslan_network:
+    driver: bridge

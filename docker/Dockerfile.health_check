@@ -1,0 +1,6 @@
+FROM aslan_drive_base:latest
+
+WORKDIR /app
+
+# Set the service-specific command
+CMD ["python3", "-m", "services.health_check.main"]
