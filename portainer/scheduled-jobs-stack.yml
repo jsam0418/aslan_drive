@@ -1,0 +1,68 @@
+# Portainer Stack: Aslan Drive Scheduled Jobs
+# Deploy after infrastructure stack is running
+#
+# Stack Name: aslan-scheduled-jobs
+# Description: Data ingestion and health check jobs for manual execution
+
+version: '3.8'
+
+services:
+  # Data Ingestion Job - Manual execution
+  data_ingestion:
+    image: ${DOCKER_REGISTRY:-}aslan_drive_data_ingestion:${IMAGE_TAG:-latest}
+    container_name: aslan_data_ingestion_manual
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@aslan_postgres:5432/aslan_drive
+      CONTINUOUS_MODE: false
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - aslan_network
+    restart: "no"
+    profiles:
+      - manual-execution
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: none
+    labels:
+      - "aslan.service=data-ingestion"
+      - "aslan.tier=processing"
+      - "aslan.execution=manual"
+      - "portainer.job.description=Run daily data ingestion"
+
+  # Health Check Job - Manual execution  
+  health_check:
+    image: ${DOCKER_REGISTRY:-}aslan_drive_health_check:${IMAGE_TAG:-latest}
+    container_name: aslan_health_check_manual
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@aslan_postgres:5432/aslan_drive
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      CONTINUOUS_MODE: false
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - aslan_network
+    restart: "no"
+    profiles:
+      - manual-execution
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+      restart_policy:
+        condition: none
+    labels:
+      - "aslan.service=health-check"
+      - "aslan.tier=monitoring"
+      - "aslan.execution=manual"
+      - "portainer.job.description=Run database health check"
+
+networks:
+  aslan_network:
+    name: aslan_network
+    external: true

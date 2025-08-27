@@ -1,0 +1,27 @@
+# Global code owners
+* @maintainer-username
+
+# Schema and database changes require additional review
+schemas/ @maintainer-username @database-expert
+generated/ @maintainer-username @database-expert
+**/migration.sql @maintainer-username @database-expert
+
+# Docker and infrastructure changes
+docker/ @maintainer-username @devops-expert
+.github/workflows/ @maintainer-username @devops-expert
+docker-compose*.yml @maintainer-username @devops-expert
+portainer/ @maintainer-username @devops-expert
+systemd/ @maintainer-username @devops-expert
+
+# Security-sensitive files
+.github/workflows/security.yml @maintainer-username @security-expert
+requirements.txt @maintainer-username @security-expert
+
+# Core services
+services/data_ingestion/ @maintainer-username @data-expert
+services/md_provider/ @maintainer-username @api-expert
+services/health_check/ @maintainer-username @monitoring-expert
+
+# Documentation
+*.md @maintainer-username @docs-expert
+docs/ @maintainer-username @docs-expert

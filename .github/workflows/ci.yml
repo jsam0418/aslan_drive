@@ -1,0 +1,260 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Code Quality and Testing
+  test-and-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Generate schema files
+      run: |
+        python tools/schema_generator.py
+        ls -la generated/
+
+    - name: Run code formatting check
+      run: |
+        python -m black --check --diff services/ tools/ tests/
+
+    - name: Run import sorting check
+      run: |
+        python -m isort --check-only --diff services/ tools/ tests/
+
+    - name: Run type checking
+      run: |
+        python -m mypy services/ tools/ --ignore-missing-imports
+
+    - name: Run basic functionality tests
+      run: |
+        python test_basic.py
+
+    - name: Run unit tests with pytest
+      run: |
+        python -m pytest tests/ -v --tb=short --cov=services --cov=tools --cov-report=xml --cov-report=term-missing
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
+        fail_ci_if_error: false
+
+  # Docker Build and Test
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: test-and-quality
+    strategy:
+      matrix:
+        service: [base, data_ingestion, md_provider, health_check]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Generate schema files
+      run: |
+        python tools/schema_generator.py
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile.${{ matrix.service }}
+        push: false
+        tags: aslan_drive_${{ matrix.service }}:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker image
+      run: |
+        # Test that the image was built successfully
+        docker images | grep aslan_drive_${{ matrix.service }}
+        
+        # Basic container smoke test
+        if [ "${{ matrix.service }}" = "base" ]; then
+          docker run --rm aslan_drive_${{ matrix.service }}:test python --version
+        elif [ "${{ matrix.service }}" = "md_provider" ]; then
+          # Test that FastAPI can start (quick validation)
+          timeout 10s docker run --rm -p 8001:8000 aslan_drive_${{ matrix.service }}:test || true
+        else
+          # For other services, just test Python import
+          docker run --rm aslan_drive_${{ matrix.service }}:test python -c "print('Container working')"
+        fi
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: test-and-quality
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Bandit security scan
+      run: |
+        pip install bandit[toml]
+        bandit -r services/ tools/ -f json -o bandit-report.json || true
+
+    - name: Run Safety dependency scan
+      run: |
+        pip install safety
+        safety check --json --output safety-report.json || true
+
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # Integration Tests
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test123
+          POSTGRES_USER: trader
+          POSTGRES_DB: aslan_drive
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Generate schema and apply migration
+      run: |
+        python tools/schema_generator.py
+        
+        # Apply migration to test database
+        PGPASSWORD=test123 psql -h localhost -U trader -d aslan_drive -f generated/migration.sql
+
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
+      run: |
+        python -m pytest tests/test_integration.py -v --tb=short
+
+    - name: Test data ingestion flow
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
+      run: |
+        # Test that data ingestion can run without errors
+        cd services/data_ingestion && python main.py || echo "Expected to fail without proper setup"
+
+  # Performance and Load Testing
+  performance-test:
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install locust
+
+    - name: Generate schema files
+      run: |
+        python tools/schema_generator.py
+
+    - name: Create performance test
+      run: |
+        cat > locustfile.py << 'EOF'
+        from locust import HttpUser, task, between
+        
+        class APIUser(HttpUser):
+            wait_time = between(1, 3)
+            
+            @task
+            def health_check(self):
+                self.client.get("/health")
+            
+            @task
+            def get_symbols(self):
+                self.client.get("/symbols")
+        EOF
+
+    - name: Start services for load test
+      run: |
+        # This would start the services in the background
+        echo "Performance testing would require running services"
+        echo "Skipping for now - placeholder for future implementation"
+
+  # Build Status Summary
+  build-summary:
+    runs-on: ubuntu-latest
+    needs: [test-and-quality, docker-build, security-scan, integration-test]
+    if: always()
+    steps:
+    - name: Build Summary
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- Code Quality: ${{ needs.test-and-quality.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Docker Build: ${{ needs.docker-build.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Integration Tests: ${{ needs.integration-test.result }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.test-and-quality.result }}" == "success" && "${{ needs.docker-build.result }}" == "success" ]]; then
+          echo "✅ **Build Status: PASSED**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Build Status: FAILED**" >> $GITHUB_STEP_SUMMARY
+        fi

@@ -1,0 +1,35 @@
+[Unit]
+Description=Aslan Drive Data Ingestion Daily Job
+Requires=docker.service
+After=docker.service
+Wants=aslan-data-ingestion.timer
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/aslan-drive
+Environment=DATABASE_URL=postgresql://trader:your_password@aslan_postgres:5432/aslan_drive
+Environment=LOG_LEVEL=info
+ExecStartPre=/usr/bin/docker pull aslan_drive_data_ingestion:latest
+ExecStart=/opt/aslan-drive/scripts/run_data_ingestion.sh
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/aslan
+ReadWritePaths=/opt/aslan-drive
+
+# Resource limits
+MemoryLimit=512M
+CPUQuota=50%
+
+# Restart policy
+RestartSec=5min
+Restart=on-failure
+RestartPreventExitStatus=2
+
+[Install]
+WantedBy=multi-user.target

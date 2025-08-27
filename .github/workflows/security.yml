@@ -1,0 +1,265 @@
+name: Security Scanning
+
+on:
+  schedule:
+    # Run security scans weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # Container Security Scanning
+  container-security:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [base, data_ingestion, md_provider, health_check]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Generate schema files
+      run: |
+        python tools/schema_generator.py
+
+    - name: Build Docker image for scanning
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile.${{ matrix.service }}
+        push: false
+        tags: aslan_drive_${{ matrix.service }}:security-scan
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: aslan_drive_${{ matrix.service }}:security-scan
+        format: 'sarif'
+        output: 'trivy-${{ matrix.service }}.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-${{ matrix.service }}.sarif'
+
+    - name: Run Trivy vulnerability scanner (table format)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: aslan_drive_${{ matrix.service }}:security-scan
+        format: 'table'
+        output: 'trivy-${{ matrix.service }}-report.txt'
+
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports-${{ matrix.service }}
+        path: |
+          trivy-${{ matrix.service }}.sarif
+          trivy-${{ matrix.service }}-report.txt
+
+  # Code Security Analysis
+  code-security:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit[toml] safety semgrep
+
+    - name: Run Bandit security linter
+      run: |
+        bandit -r services/ tools/ -f json -o bandit-report.json
+        bandit -r services/ tools/ -f txt -o bandit-report.txt
+
+    - name: Run Safety dependency scanner
+      run: |
+        pip install -r requirements.txt
+        safety check --json --output safety-report.json
+        safety check --output safety-report.txt
+
+    - name: Run Semgrep security scanner
+      run: |
+        semgrep --config=auto --json --output=semgrep-report.json services/ tools/
+        semgrep --config=auto --text --output=semgrep-report.txt services/ tools/
+
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: code-security-reports
+        path: |
+          bandit-report.*
+          safety-report.*
+          semgrep-report.*
+
+  # Dependency Scanning
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run GitHub Dependency Review
+      uses: actions/dependency-review-action@v3
+      with:
+        fail-on-severity: moderate
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install pip-audit
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-audit
+
+    - name: Run pip-audit
+      run: |
+        pip-audit --format=json --output=pip-audit-report.json
+        pip-audit --format=text --output=pip-audit-report.txt
+
+    - name: Upload dependency scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: dependency-reports
+        path: |
+          pip-audit-report.*
+
+  # SAST (Static Application Security Testing)
+  sast-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: python
+        queries: security-and-quality
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Generate schema files
+      run: |
+        python tools/schema_generator.py
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: "/language:python"
+
+  # Secrets Scanning
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run TruffleHog secrets scanner
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+    - name: Run GitLeaks secrets scanner
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Security Summary
+  security-summary:
+    runs-on: ubuntu-latest
+    needs: [container-security, code-security, dependency-scan, sast-scan, secrets-scan]
+    if: always()
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Create security summary
+      run: |
+        echo "# Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "## Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "- Container Security: ${{ needs.container-security.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Code Security: ${{ needs.code-security.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Dependency Scan: ${{ needs.dependency-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- SAST Scan: ${{ needs.sast-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Secrets Scan: ${{ needs.secrets-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Count vulnerabilities from reports if available
+        if [ -f "code-security-reports/bandit-report.json" ]; then
+          BANDIT_COUNT=$(python -c "import json; data=json.load(open('code-security-reports/bandit-report.json')); print(len(data.get('results', [])))" 2>/dev/null || echo "0")
+          echo "- Bandit Issues: $BANDIT_COUNT" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ -f "dependency-reports/pip-audit-report.json" ]; then
+          echo "- Dependency vulnerabilities found (see pip-audit report)" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📊 **Security reports are available in the workflow artifacts**" >> $GITHUB_STEP_SUMMARY
+        
+        # Overall status
+        if [[ "${{ needs.container-security.result }}" == "success" && "${{ needs.code-security.result }}" == "success" ]]; then
+          echo "✅ **Overall Security Status: PASSED**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **Overall Security Status: REVIEW REQUIRED**" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Notify on security issues
+      if: ${{ failure() && secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-type: application/json' \
+          --data '{
+            "text": "🚨 Security scan failed for Aslan Drive",
+            "attachments": [{
+              "color": "danger",
+              "fields": [{
+                "title": "Repository",
+                "value": "${{ github.repository }}",
+                "short": true
+              }, {
+                "title": "Workflow",
+                "value": "${{ github.workflow }}",
+                "short": true
+              }, {
+                "title": "Run",
+                "value": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "short": false
+              }]
+            }]
+          }'

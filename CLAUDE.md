@@ -91,10 +91,48 @@ Example workflow for schema changes:
 - Integration tests: `pytest tests/test_integration.py`
 - Database tests use SQLite for isolation
 
+## Independent Service Deployment
+
+### Production Architecture
+The system is designed for independent service deployment:
+
+**Always-Running Services**:
+- **PostgreSQL**: Core database (24/7)
+- **MD Provider API**: REST data access (24/7)
+
+**Scheduled Services**:
+- **Data Ingestion**: Daily at 6:00 AM (one-time execution)
+- **Health Check**: Daily at 8:00 AM (one-time execution)
+
+### Deployment Options
+- **Portainer**: Visual container management with manual job triggering
+- **Systemd**: Native Linux scheduling with automatic restarts
+- **N8n**: Advanced workflow automation with error handling
+- **Cron**: Simple scheduled execution
+
+### Key Files for Production
+- `docker-compose.infrastructure.yml` - Always-running services
+- `portainer/infrastructure-stack.yml` - Portainer-ready stack
+- `systemd/*.service` - Systemd service definitions
+- `scripts/run_*.sh` - Standalone execution scripts
+- `n8n/aslan-drive-workflow.json` - N8n automation workflow
+
+### CI/CD Pipeline
+- **GitHub Actions**: Automated testing, building, and deployment
+- **Security Scanning**: Weekly vulnerability and dependency scanning
+- **Performance Testing**: Automated load testing and benchmarking
+- **Release Automation**: Automated Docker image publishing and GitHub releases
+
+### Key CI/CD Files
+- `.github/workflows/ci.yml` - Main CI/CD pipeline
+- `.github/workflows/release.yml` - Release and deployment automation
+- `.github/workflows/security.yml` - Security scanning pipeline
+- `.github/workflows/performance.yml` - Performance testing pipeline
+
 ## Key Design Principles
 
+- **Independent Services**: Each component can be deployed and scaled separately
 - **Schema-First Development**: JSON schema drives all data structures
-- **Containerized Services**: Full Docker Compose orchestration
-- **Mock Data Foundation**: Realistic OHLCV data generation for testing
-- **Health Check Integration**: Database validation with Slack notifications
-- **Agile Infrastructure**: Always-working system ready for incremental features
+- **Scheduled Execution**: Jobs run on-demand rather than continuously
+- **Production Ready**: Proper logging, monitoring, and error handling
+- **Multiple Orchestration Options**: Portainer, systemd, N8n, or cron scheduling

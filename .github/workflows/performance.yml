@@ -1,0 +1,446 @@
+name: Performance Testing
+
+on:
+  schedule:
+    # Run performance tests weekly on Saturdays at 3 AM UTC
+    - cron: '0 3 * * 6'
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'services/md_provider/**'
+      - 'services/data_ingestion/**'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Test duration in seconds'
+        required: false
+        default: '60'
+      users:
+        description: 'Number of concurrent users'
+        required: false
+        default: '10'
+
+jobs:
+  # API Performance Testing
+  api-performance:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test123
+          POSTGRES_USER: trader
+          POSTGRES_DB: aslan_drive
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install locust pytest-benchmark
+
+    - name: Generate schema and load test data
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
+      run: |
+        python tools/schema_generator.py
+        
+        # Apply migration
+        PGPASSWORD=test123 psql -h localhost -U trader -d aslan_drive -f generated/migration.sql
+        
+        # Load test data
+        cd services/data_ingestion && python main.py
+
+    - name: Start MD Provider API
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
+      run: |
+        cd services/md_provider
+        python main.py &
+        API_PID=$!
+        echo "API_PID=$API_PID" >> $GITHUB_ENV
+        
+        # Wait for API to start
+        sleep 10
+        curl -f http://localhost:8000/health || exit 1
+
+    - name: Create performance test script
+      run: |
+        cat > locustfile.py << 'EOF'
+        from locust import HttpUser, task, between
+        import random
+        
+        class AslanDriveUser(HttpUser):
+            wait_time = between(0.5, 2)
+            
+            def on_start(self):
+                # Get available symbols
+                response = self.client.get("/symbols")
+                if response.status_code == 200:
+                    self.symbols = [s['symbol'] for s in response.json()[:10]]  # Use first 10 symbols
+                else:
+                    self.symbols = ['AAPL', 'GOOGL', 'MSFT']  # Fallback
+            
+            @task(3)
+            def health_check(self):
+                self.client.get("/health")
+            
+            @task(2)
+            def get_symbols(self):
+                self.client.get("/symbols")
+            
+            @task(5)
+            def get_ohlcv_single_symbol(self):
+                if hasattr(self, 'symbols') and self.symbols:
+                    symbol = random.choice(self.symbols)
+                    self.client.get(f"/ohlcv/{symbol}?limit=100")
+            
+            @task(3)
+            def get_latest_data(self):
+                if hasattr(self, 'symbols') and self.symbols:
+                    symbols = ','.join(random.sample(self.symbols, min(3, len(self.symbols))))
+                    self.client.get(f"/latest?symbols={symbols}")
+            
+            @task(1)
+            def get_multi_symbol_ohlcv(self):
+                if hasattr(self, 'symbols') and self.symbols:
+                    symbols = ','.join(random.sample(self.symbols, min(5, len(self.symbols))))
+                    self.client.get(f"/ohlcv?symbols={symbols}&limit=50")
+        EOF
+
+    - name: Run performance tests with Locust
+      run: |
+        DURATION=${{ github.event.inputs.duration || '60' }}
+        USERS=${{ github.event.inputs.users || '10' }}
+        
+        locust -f locustfile.py \
+          --headless \
+          --host=http://localhost:8000 \
+          --users=$USERS \
+          --spawn-rate=2 \
+          --run-time=${DURATION}s \
+          --html=performance-report.html \
+          --csv=performance
+
+    - name: Generate performance summary
+      run: |
+        echo "# Performance Test Results" >> performance-summary.md
+        echo "" >> performance-summary.md
+        echo "**Test Configuration:**" >> performance-summary.md
+        echo "- Duration: ${{ github.event.inputs.duration || '60' }} seconds" >> performance-summary.md
+        echo "- Concurrent Users: ${{ github.event.inputs.users || '10' }}" >> performance-summary.md
+        echo "- Target: MD Provider API" >> performance-summary.md
+        echo "" >> performance-summary.md
+        
+        if [ -f "performance_stats.csv" ]; then
+          echo "**Results Summary:**" >> performance-summary.md
+          python -c "
+import csv
+import sys
+
+# Read performance stats
+with open('performance_stats.csv', 'r') as f:
+    reader = csv.DictReader(f)
+    stats = list(reader)
+
+print('| Endpoint | Requests | Failures | Avg Response Time (ms) | Min (ms) | Max (ms) |')
+print('|----------|----------|----------|------------------------|----------|----------|')
+
+for row in stats:
+    if row['Name'] != 'Aggregated':
+        print(f'| {row[\"Name\"]} | {row[\"Request Count\"]} | {row[\"Failure Count\"]} | {row[\"Average Response Time\"]} | {row[\"Min Response Time\"]} | {row[\"Max Response Time\"]} |')
+" >> performance-summary.md
+        fi
+
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: |
+          performance-report.html
+          performance_*.csv
+          performance-summary.md
+
+    - name: Stop API
+      run: |
+        if [ ! -z "$API_PID" ]; then
+          kill $API_PID
+        fi
+
+  # Database Performance Testing
+  database-performance:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test123
+          POSTGRES_USER: trader
+          POSTGRES_DB: aslan_drive
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest-benchmark
+
+    - name: Generate schema and setup database
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
+      run: |
+        python tools/schema_generator.py
+        
+        # Apply migration
+        PGPASSWORD=test123 psql -h localhost -U trader -d aslan_drive -f generated/migration.sql
+
+    - name: Create database performance test
+      run: |
+        cat > test_db_performance.py << 'EOF'
+import pytest
+import time
+from datetime import date, timedelta
+from services.data_ingestion.database import DatabaseManager
+from services.data_ingestion.mock_data_generator import MockOHLCVGenerator
+
+@pytest.fixture
+def db_manager():
+    return DatabaseManager("postgresql://trader:test123@localhost:5432/aslan_drive")
+
+@pytest.fixture  
+def generator():
+    return MockOHLCVGenerator()
+
+def test_bulk_insert_performance(benchmark, db_manager, generator):
+    """Test bulk insert performance"""
+    # Generate 1000 records
+    end_date = date.today() - timedelta(days=1)
+    start_date = end_date - timedelta(days=100)
+    
+    data = generator.generate_historical_data(
+        symbols=['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA'],
+        start_date=start_date,
+        end_date=end_date
+    )
+    
+    # Benchmark the insert operation
+    result = benchmark(db_manager.insert_daily_ohlcv_data, data)
+    assert result > 0
+
+def test_query_performance(benchmark, db_manager, generator):
+    """Test query performance with data"""
+    # First, insert some test data
+    end_date = date.today() - timedelta(days=1)
+    start_date = end_date - timedelta(days=30)
+    
+    data = generator.generate_historical_data(
+        symbols=['AAPL', 'GOOGL'],
+        start_date=start_date,
+        end_date=end_date
+    )
+    db_manager.insert_daily_ohlcv_data(data)
+    
+    # Benchmark query performance
+    def query_recent_data():
+        return db_manager.get_latest_data_date('AAPL')
+    
+    result = benchmark(query_recent_data)
+    assert result is not None
+
+def test_concurrent_operations(db_manager, generator):
+    """Test concurrent database operations"""
+    import threading
+    import queue
+    
+    results = queue.Queue()
+    errors = queue.Queue()
+    
+    def worker():
+        try:
+            data = generator.generate_historical_data(
+                symbols=['TEST1', 'TEST2'],
+                start_date=date.today() - timedelta(days=5),
+                end_date=date.today() - timedelta(days=1)
+            )
+            count = db_manager.insert_daily_ohlcv_data(data)
+            results.put(count)
+        except Exception as e:
+            errors.put(e)
+    
+    # Start 5 concurrent workers
+    threads = []
+    for i in range(5):
+        t = threading.Thread(target=worker)
+        t.start()
+        threads.append(t)
+    
+    # Wait for all threads to complete
+    for t in threads:
+        t.join()
+    
+    # Check results
+    assert errors.empty(), f"Errors occurred: {list(errors.queue)}"
+    assert not results.empty(), "No results returned"
+    
+    total_records = sum(results.queue)
+    assert total_records > 0
+EOF
+
+    - name: Run database performance tests
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
+      run: |
+        python -m pytest test_db_performance.py -v --benchmark-only --benchmark-json=db-benchmark.json
+
+    - name: Upload database performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: database-performance
+        path: |
+          db-benchmark.json
+
+  # Memory and Resource Usage Testing
+  resource-usage:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install memory-profiler psutil
+
+    - name: Generate schema files
+      run: |
+        python tools/schema_generator.py
+
+    - name: Create memory usage test
+      run: |
+        cat > test_memory_usage.py << 'EOF'
+import psutil
+import time
+from services.data_ingestion.mock_data_generator import MockOHLCVGenerator
+from datetime import date, timedelta
+
+def test_memory_usage():
+    """Test memory usage of data generation"""
+    process = psutil.Process()
+    initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+    
+    generator = MockOHLCVGenerator()
+    
+    # Generate large dataset
+    end_date = date.today() - timedelta(days=1)
+    start_date = end_date - timedelta(days=365)
+    
+    data = generator.generate_historical_data(
+        symbols=['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN', 'NFLX', 'SPY', 'QQQ'],
+        start_date=start_date,
+        end_date=end_date
+    )
+    
+    peak_memory = process.memory_info().rss / 1024 / 1024  # MB
+    memory_used = peak_memory - initial_memory
+    
+    print(f"Initial memory: {initial_memory:.2f} MB")
+    print(f"Peak memory: {peak_memory:.2f} MB") 
+    print(f"Memory used: {memory_used:.2f} MB")
+    print(f"Records generated: {len(data)}")
+    print(f"Memory per record: {memory_used / len(data) * 1024:.2f} KB")
+    
+    # Write results to file
+    with open('memory-usage.txt', 'w') as f:
+        f.write(f"Memory Usage Test Results\n")
+        f.write(f"========================\n")
+        f.write(f"Initial memory: {initial_memory:.2f} MB\n")
+        f.write(f"Peak memory: {peak_memory:.2f} MB\n")
+        f.write(f"Memory used: {memory_used:.2f} MB\n")
+        f.write(f"Records generated: {len(data)}\n")
+        f.write(f"Memory per record: {memory_used / len(data) * 1024:.2f} KB\n")
+
+if __name__ == "__main__":
+    test_memory_usage()
+EOF
+
+    - name: Run memory usage test
+      run: |
+        python test_memory_usage.py
+
+    - name: Upload resource usage results
+      uses: actions/upload-artifact@v3
+      with:
+        name: resource-usage
+        path: |
+          memory-usage.txt
+
+  # Performance Summary
+  performance-summary:
+    runs-on: ubuntu-latest
+    needs: [api-performance, database-performance, resource-usage]
+    if: always()
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Create performance summary
+      run: |
+        echo "# Performance Test Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "- API Performance: ${{ needs.api-performance.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Database Performance: ${{ needs.database-performance.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Resource Usage: ${{ needs.resource-usage.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "performance-results/performance-summary.md" ]; then
+          echo "## API Performance Results" >> $GITHUB_STEP_SUMMARY
+          cat performance-results/performance-summary.md >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ -f "resource-usage/memory-usage.txt" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Memory Usage" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat resource-usage/memory-usage.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📈 **Performance reports are available in the workflow artifacts**" >> $GITHUB_STEP_SUMMARY
