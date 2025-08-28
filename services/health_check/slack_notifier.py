@@ -7,7 +7,13 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import httpx
+try:
+    import httpx
+
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
+    httpx = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +40,7 @@ class SlackNotifier:
         fields: Optional[list] = None,
     ) -> bool:
         """Send a notification to Slack."""
-        if not self.webhook_url:
+        if not self.webhook_url or not HTTPX_AVAILABLE:
             logger.info(f"[SLACK NOTIFICATION] {title}: {message}")
             if fields:
                 for field in fields:

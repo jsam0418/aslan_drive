@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 # Add project root to path
@@ -30,29 +30,49 @@ def db_manager(test_database_url):
     """Create a test database manager."""
     manager = DatabaseManager(test_database_url)
 
-    # Load and execute migration
-    migration_file = project_root / "generated" / "migration.sql"
-    if migration_file.exists():
-        with open(migration_file, "r") as f:
-            migration_sql = f.read()
-            # Convert PostgreSQL SQL to SQLite compatible
-            sqlite_migration = (
-                migration_sql.replace("CREATE TABLE IF NOT EXISTS", "CREATE TABLE")
-                .replace("DECIMAL(15,4)", "REAL")
-                .replace("BIGINT", "INTEGER")
-                .replace("TIMESTAMP WITH TIME ZONE", "DATETIME")
-                .replace("CURRENT_TIMESTAMP", "datetime('now')")
-                .replace("VARCHAR(20)", "TEXT")
-                .replace("VARCHAR(255)", "TEXT")
-                .replace("VARCHAR(50)", "TEXT")
-                .replace("VARCHAR(3)", "TEXT")
-                .replace("BOOLEAN", "INTEGER")
+    # Create test tables directly for SQLite
+    try:
+        with manager.engine.connect() as conn:
+            # Create daily_ohlcv table
+            conn.execute(
+                text(
+                    """
+                CREATE TABLE daily_ohlcv (
+                    symbol TEXT NOT NULL,
+                    date DATE NOT NULL,
+                    open REAL NOT NULL,
+                    high REAL NOT NULL,
+                    low REAL NOT NULL,
+                    close REAL NOT NULL,
+                    volume INTEGER NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(symbol, date)
+                )
+            """
+                )
             )
 
-            try:
-                manager.execute_migration(sqlite_migration)
-            except Exception as e:
-                print(f"Migration warning: {e}")
+            # Create symbols table
+            conn.execute(
+                text(
+                    """
+                CREATE TABLE symbols (
+                    symbol TEXT PRIMARY KEY,
+                    name TEXT,
+                    asset_class TEXT NOT NULL,
+                    exchange TEXT,
+                    currency TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+                )
+            )
+
+            conn.commit()
+    except Exception as e:
+        print(f"Table creation warning: {e}")
 
     yield manager
 

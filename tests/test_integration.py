@@ -11,7 +11,13 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from services.health_check.slack_notifier import SlackNotifier
+try:
+    from services.health_check.slack_notifier import SlackNotifier
+
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
+    SlackNotifier = None
 
 
 def test_end_to_end_data_flow(db_manager, mock_generator):
@@ -41,26 +47,33 @@ def test_end_to_end_data_flow(db_manager, mock_generator):
     assert latest_date == test_date.isoformat()
 
 
-@pytest.mark.asyncio
-async def test_slack_notifier_without_webhook():
+@pytest.mark.skipif(
+    not SLACK_AVAILABLE, reason="SlackNotifier dependencies not available"
+)
+def test_slack_notifier_without_webhook():
     """Test Slack notifier without actual webhook (logs only)."""
-    notifier = SlackNotifier(webhook_url=None)
+    import asyncio
 
-    # Should succeed but only log the message
-    result = await notifier.send_notification("Test message")
-    assert result is True
+    async def run_test():
+        notifier = SlackNotifier(webhook_url=None)
 
-    # Test health check success notification
-    result = await notifier.send_health_check_success(
-        check_date="2024-01-15", records_found=100, symbols=["AAPL", "GOOGL"]
-    )
-    assert result is True
+        # Should succeed but only log the message
+        result = await notifier.send_notification("Test message")
+        assert result is True
 
-    # Test health check failure notification
-    result = await notifier.send_health_check_failure(
-        check_date="2024-01-15", error_message="Test error", database_connected=True
-    )
-    assert result is True
+        # Test health check success notification
+        result = await notifier.send_health_check_success(
+            check_date="2024-01-15", records_found=100, symbols=["AAPL", "GOOGL"]
+        )
+        assert result is True
+
+        # Test health check failure notification
+        result = await notifier.send_health_check_failure(
+            check_date="2024-01-15", error_message="Test error", database_connected=True
+        )
+        assert result is True
+
+    asyncio.run(run_test())
 
 
 def test_weekend_data_handling(mock_generator):

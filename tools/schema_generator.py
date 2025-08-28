@@ -100,6 +100,7 @@ def generate_sqlalchemy_model(table_name: str, table_def: Dict[str, Any]) -> str
     # Map SQL types to SQLAlchemy types
     sqlalchemy_type_map = {
         "VARCHAR": "String",
+        "INTEGER": "BigInteger",
         "DATE": "Date",
         "TIMESTAMP WITH TIME ZONE": "DateTime",
         "DECIMAL": "Numeric",

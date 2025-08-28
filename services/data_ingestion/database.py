@@ -38,6 +38,10 @@ class DatabaseManager:
             autocommit=False, autoflush=False, bind=self.engine
         )
 
+    def _is_sqlite(self) -> bool:
+        """Check if the database is SQLite."""
+        return "sqlite" in str(self.engine.url).lower()
+
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:
         """Get a database session with automatic cleanup."""
@@ -94,24 +98,43 @@ class DatabaseManager:
         try:
             with self.get_session() as session:  # type: Session
                 for record in data_records:
-                    # Use raw SQL for better control over conflict handling
-                    insert_sql = text(
-                        """
-                        INSERT INTO daily_ohlcv 
-                        (symbol, date, open, high, low, close, volume, created_at)
-                        VALUES 
-                        (:symbol, :date, :open, :high, :low, :close, :volume, :created_at)
-                        ON CONFLICT (symbol, date) DO UPDATE SET
-                            open = EXCLUDED.open,
-                            high = EXCLUDED.high,
-                            low = EXCLUDED.low,
-                            close = EXCLUDED.close,
-                            volume = EXCLUDED.volume,
-                            created_at = EXCLUDED.created_at
-                    """
-                    )
+                    # Convert Decimal to float for SQLite compatibility
+                    converted_record = record.copy()
+                    if self._is_sqlite():
+                        from decimal import Decimal
 
-                    session.execute(insert_sql, record)
+                        for key, value in converted_record.items():
+                            if isinstance(value, Decimal):
+                                converted_record[key] = float(value)
+
+                        # SQLite uses INSERT OR REPLACE
+                        insert_sql = text(
+                            """
+                            INSERT OR REPLACE INTO daily_ohlcv 
+                            (symbol, date, open, high, low, close, volume, created_at)
+                            VALUES 
+                            (:symbol, :date, :open, :high, :low, :close, :volume, :created_at)
+                        """
+                        )
+                    else:
+                        # PostgreSQL uses ON CONFLICT
+                        insert_sql = text(
+                            """
+                            INSERT INTO daily_ohlcv 
+                            (symbol, date, open, high, low, close, volume, created_at)
+                            VALUES 
+                            (:symbol, :date, :open, :high, :low, :close, :volume, :created_at)
+                            ON CONFLICT (symbol, date) DO UPDATE SET
+                                open = EXCLUDED.open,
+                                high = EXCLUDED.high,
+                                low = EXCLUDED.low,
+                                close = EXCLUDED.close,
+                                volume = EXCLUDED.volume,
+                                created_at = EXCLUDED.created_at
+                        """
+                        )
+
+                    session.execute(insert_sql, converted_record)
                     inserted_count += 1
 
                 logger.info(f"Inserted/updated {inserted_count} OHLCV records")
@@ -132,21 +155,33 @@ class DatabaseManager:
         try:
             with self.get_session() as session:  # type: Session
                 for record in metadata_records:
-                    insert_sql = text(
+                    if self._is_sqlite():
+                        # SQLite uses INSERT OR REPLACE
+                        insert_sql = text(
+                            """
+                            INSERT OR REPLACE INTO symbols 
+                            (symbol, name, asset_class, exchange, currency, active, created_at, updated_at)
+                            VALUES 
+                            (:symbol, :name, :asset_class, :exchange, :currency, :active, :created_at, :updated_at)
                         """
-                        INSERT INTO symbols 
-                        (symbol, name, asset_class, exchange, currency, active, created_at, updated_at)
-                        VALUES 
-                        (:symbol, :name, :asset_class, :exchange, :currency, :active, :created_at, :updated_at)
-                        ON CONFLICT (symbol) DO UPDATE SET
-                            name = EXCLUDED.name,
-                            asset_class = EXCLUDED.asset_class,
-                            exchange = EXCLUDED.exchange,
-                            currency = EXCLUDED.currency,
-                            active = EXCLUDED.active,
-                            updated_at = EXCLUDED.updated_at
-                    """
-                    )
+                        )
+                    else:
+                        # PostgreSQL uses ON CONFLICT
+                        insert_sql = text(
+                            """
+                            INSERT INTO symbols 
+                            (symbol, name, asset_class, exchange, currency, active, created_at, updated_at)
+                            VALUES 
+                            (:symbol, :name, :asset_class, :exchange, :currency, :active, :created_at, :updated_at)
+                            ON CONFLICT (symbol) DO UPDATE SET
+                                name = EXCLUDED.name,
+                                asset_class = EXCLUDED.asset_class,
+                                exchange = EXCLUDED.exchange,
+                                currency = EXCLUDED.currency,
+                                active = EXCLUDED.active,
+                                updated_at = EXCLUDED.updated_at
+                        """
+                        )
 
                     session.execute(insert_sql, record)
                     inserted_count += 1
@@ -174,7 +209,13 @@ class DatabaseManager:
                     query = text("SELECT MAX(date) FROM daily_ohlcv")
                     result = session.execute(query).scalar()
 
-                return result.isoformat() if result else None
+                if result:
+                    # Handle different database types
+                    if hasattr(result, "isoformat"):
+                        return result.isoformat()  # PostgreSQL returns date object
+                    else:
+                        return str(result)  # SQLite returns string
+                return None
 
         except SQLAlchemyError as e:
             logger.error(f"Failed to get latest data date: {e}")

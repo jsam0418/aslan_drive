@@ -15,7 +15,7 @@ class MockOHLCVGenerator:
 
     def __init__(self, seed: int = 42):
         """Initialize the mock data generator with a random seed for reproducibility."""
-        random.seed(seed)
+        self.rng = random.Random(seed)
         self.symbols = [
             "AAPL",
             "GOOGL",
@@ -55,22 +55,22 @@ class MockOHLCVGenerator:
         prev_close = self.current_prices[symbol]
 
         # Generate daily volatility (typically 1-3% for most stocks)
-        daily_volatility = random.uniform(0.01, 0.03)
+        daily_volatility = self.rng.uniform(0.01, 0.03)
 
         # Random walk for the day's direction
-        direction_change = random.normalvariate(0, daily_volatility)
+        direction_change = self.rng.normalvariate(0, daily_volatility)
 
         # Calculate the day's range
         day_range = prev_close * Decimal(str(abs(direction_change)))
 
         # Generate OHLC with realistic relationships
         # Open: slightly different from previous close
-        open_change = random.uniform(-0.005, 0.005)  # ±0.5%
+        open_change = self.rng.uniform(-0.005, 0.005)  # ±0.5%
         open_price = prev_close * (1 + Decimal(str(open_change)))
 
         # Generate high and low based on the day's volatility
-        high_range = day_range * Decimal(str(random.uniform(0.5, 1.0)))
-        low_range = day_range * Decimal(str(random.uniform(0.5, 1.0)))
+        high_range = day_range * Decimal(str(self.rng.uniform(0.5, 1.0)))
+        low_range = day_range * Decimal(str(self.rng.uniform(0.5, 1.0)))
 
         if direction_change > 0:  # Up day
             close_price = prev_close * (1 + Decimal(str(direction_change)))
@@ -99,7 +99,7 @@ class MockOHLCVGenerator:
             "QQQ": 40_000_000,
         }
 
-        volume_multiplier = random.uniform(0.5, 2.0)  # Volume can vary significantly
+        volume_multiplier = self.rng.uniform(0.5, 2.0)  # Volume can vary significantly
         volume = int(base_volume.get(symbol, 10_000_000) * volume_multiplier)
 
         # Update current price for next day

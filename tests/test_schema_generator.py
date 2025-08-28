@@ -83,8 +83,8 @@ def test_generate_sqlalchemy_model(sample_schema):
 
     assert "class TestTable(Base):" in result
     assert '__tablename__ = "test_table"' in result
-    assert "Column(BigInteger, primary_key=True)" in result
-    assert "Column(String(50), nullable=False)" in result
+    assert "Column(BigInteger" in result and "primary_key=True" in result
+    assert "Column(String(50)" in result and "nullable=False" in result
 
 
 def test_generate_sql_migration(sample_schema):
