@@ -5,15 +5,20 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-try:
+if TYPE_CHECKING:
     import httpx
 
     HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-    httpx = None
+else:
+    try:
+        import httpx
+
+        HTTPX_AVAILABLE = True
+    except ImportError:
+        HTTPX_AVAILABLE = False
+        httpx = None
 
 logger = logging.getLogger(__name__)
 
