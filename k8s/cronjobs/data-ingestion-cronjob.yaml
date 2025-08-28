@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aslan-data-ingestion
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: data-ingestion
+spec:
+  schedule: "0 6 * * *"  # Daily at 6:00 AM UTC
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: aslan-drive
+            component: data-ingestion
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: data-ingestion
+            image: ghcr.io/[YOUR_GITHUB_USERNAME]/aslan-drive-data-ingestion:latest
+            imagePullPolicy: Always
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aslan-drive-secrets
+                  key: database-url
+            - name: LOG_LEVEL
+              value: "info"
+            - name: CONTINUOUS_MODE
+              value: "false"
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+          imagePullSecrets:
+          - name: ghcr-secret

@@ -1,132 +1,96 @@
 # Portainer Deployment Guide
 
-## Overview
-Deploy Aslan Drive services independently using Portainer stacks for maximum flexibility and control.
+This directory contains Portainer stack configurations for deploying Aslan Drive services.
 
-## Prerequisites
-- Portainer CE/EE running on Docker
-- Docker images built and available in registry
-- Environment variables configured
+## Stack Architecture
 
-## Deployment Order
+### Infrastructure Stack (Always Running)
+- **PostgreSQL**: Database service (24/7)
+- **MD Provider API**: REST API for market data (24/7)
 
-### 1. Infrastructure Stack (Deploy First)
-**Stack Name**: `aslan-infrastructure`
-**File**: `infrastructure-stack.yml`
-**Services**: PostgreSQL + MD Provider API
-**Restart Policy**: Always running
+### Scheduled Jobs Stack (Manual Execution)
+- **Data Ingestion**: Manual job execution container
+- **Health Check**: Manual job execution container
 
-**Environment Variables**:
+## Deployment Steps
+
+### 1. Deploy Infrastructure Stack
+
+1. In Portainer, go to **Stacks** → **Add stack**
+2. Name: `aslan-infrastructure`
+3. Upload `infrastructure-stack.yml`
+4. Set environment variables:
+   ```
+   POSTGRES_PASSWORD=your_secure_password
+   DOCKER_REGISTRY=ghcr.io/your-username/aslan-drive
+   IMAGE_TAG=latest
+   ```
+5. Deploy the stack
+
+### 2. Deploy Scheduled Jobs Stack
+
+1. In Portainer, go to **Stacks** → **Add stack**  
+2. Name: `aslan-scheduled-jobs`
+3. Upload `k8s-cronjobs-stack.yml`
+4. Set environment variables (same as above)
+5. Deploy the stack
+
+### 3. Manual Job Execution
+
+To run jobs manually in Portainer:
+
+1. Go to **Containers**
+2. Find the job container (e.g., `aslan_data_ingestion_manual`)
+3. Click **Start** to execute the job
+4. Monitor logs in real-time
+5. Container will stop automatically when job completes
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
 ```bash
+# Required
 POSTGRES_PASSWORD=your_secure_password
-POSTGRES_PORT=5432
-MD_PROVIDER_PORT=8000
-LOG_LEVEL=info
-API_DOMAIN=api.aslan-drive.local
+DOCKER_REGISTRY=ghcr.io/your-username/aslan-drive
+
+# Optional
 IMAGE_TAG=latest
-```
-
-**Pre-deployment Steps**:
-1. Upload `generated/migration.sql` to Portainer file manager at `/data/migration.sql`
-2. Ensure images are available: `aslan_drive_md_provider:latest`
-
-### 2. Scheduled Jobs Stack (Optional for Testing)
-**Stack Name**: `aslan-scheduled-jobs`
-**File**: `scheduled-jobs-stack.yml`
-**Services**: Data ingestion + Health check jobs
-**Restart Policy**: Manual execution only
-
-**Environment Variables**:
-```bash
-POSTGRES_PASSWORD=your_secure_password
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK
 LOG_LEVEL=info
-IMAGE_TAG=latest
+SLACK_WEBHOOK_URL=https://hooks.slack.com/your/webhook/url
 ```
 
-## Manual Job Execution via Portainer
+## Scheduling with External Cron
 
-### Running Data Ingestion
-1. Go to **Containers** page
-2. Find `aslan_data_ingestion_manual` 
-3. Click **Start** to run one-time ingestion
-4. Monitor logs in **Logs** tab
-5. Container will stop automatically when complete
+For automated scheduling, use host cron with Portainer API:
 
-### Running Health Check
-1. Go to **Containers** page
-2. Find `aslan_health_check_manual`
-3. Click **Start** to run health verification
-4. Check logs for results and Slack notifications
-5. Container will stop automatically when complete
-
-## External Scheduling Options
-
-### Option 1: Systemd Timers (Recommended)
-Use systemd service files in `/systemd/` directory:
 ```bash
-# Copy services to systemd
-sudo cp systemd/*.service /etc/systemd/system/
-sudo cp systemd/*.timer /etc/systemd/system/
+# Daily data ingestion at 6:00 AM
+0 6 * * * curl -X POST "http://localhost:9000/api/endpoints/1/docker/containers/aslan_data_ingestion_manual/start" -H "Authorization: Bearer YOUR_API_KEY"
 
-# Configure environment variables
-sudo vim /etc/systemd/system/aslan-data-ingestion.service
-
-# Enable and start timers
-sudo systemctl enable aslan-data-ingestion.timer
-sudo systemctl enable aslan-health-check.timer
-sudo systemctl start aslan-data-ingestion.timer
-sudo systemctl start aslan-health-check.timer
-
-# Check status
-sudo systemctl status aslan-data-ingestion.timer
-sudo systemctl list-timers aslan-*
+# Daily health check at 8:00 AM  
+0 8 * * * curl -X POST "http://localhost:9000/api/endpoints/1/docker/containers/aslan_health_check_manual/start" -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-### Option 2: Cron Jobs
-```bash
-# Add to crontab
-0 6 * * * /opt/aslan-drive/scripts/run_data_ingestion.sh
-0 8 * * * /opt/aslan-drive/scripts/run_health_check.sh
-```
+## Monitoring
 
-### Option 3: N8n Workflows
-- Create workflow nodes to trigger Docker containers
-- Use HTTP requests to Portainer API
-- Set up error handling and notifications
+- **Container Logs**: Available in Portainer UI
+- **Resource Usage**: Monitor CPU/Memory in container stats
+- **Health Checks**: MD Provider has built-in health endpoint
+- **Job Status**: Check container exit codes for job success/failure
 
-## Monitoring & Maintenance
+## Upgrading
 
-### Database Backups
-```bash
-# Weekly backup script (add to cron)
-docker exec aslan_postgres pg_dump -U trader aslan_drive > backup_$(date +%Y%m%d).sql
-```
+To upgrade to newer image versions:
 
-### Log Management
-Logs are stored in:
-- Container logs: Portainer UI or `docker logs`
-- Script logs: `/var/log/aslan/`
-- System logs: `journalctl -u aslan-*`
+1. Update `IMAGE_TAG` in stack environment variables
+2. Redeploy the stack
+3. Portainer will pull the latest image automatically
 
-### Health Monitoring
-- API health endpoint: `http://localhost:8000/health`
-- Database connectivity: Built into health check service
-- Slack notifications: Configure webhook URL
+## Transition to Kubernetes
 
-## Scaling Considerations
+When ready to move to Kubernetes:
 
-### Resource Limits
-- PostgreSQL: 512MB memory limit
-- MD Provider: 256MB memory limit  
-- Jobs: 256MB memory limit each
-
-### Performance Tuning
-- Adjust `shared_buffers` in PostgreSQL config
-- Scale MD Provider horizontally behind load balancer
-- Monitor job execution times and adjust schedules
-
-### High Availability
-- Use external PostgreSQL cluster
-- Deploy MD Provider on multiple nodes
-- Implement backup/restore procedures
+1. Apply the K8s manifests from `k8s/` directory
+2. Remove the Portainer scheduled jobs stack
+3. Keep the infrastructure stack if needed for development

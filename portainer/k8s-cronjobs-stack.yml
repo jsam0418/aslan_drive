@@ -1,0 +1,75 @@
+# Portainer Stack: Aslan Drive K8s-style Scheduled Jobs
+# This stack creates containers that can be manually triggered via Portainer
+# Use these for testing/manual execution until K8s CronJobs are deployed
+#
+# Stack Name: aslan-scheduled-jobs
+# Description: Manual execution containers for data ingestion and health checks
+
+version: '3.8'
+
+services:
+  # Data Ingestion Job - Manual execution container
+  data_ingestion:
+    image: ${DOCKER_REGISTRY:-ghcr.io/[YOUR_USERNAME]/aslan-drive}-data-ingestion:${IMAGE_TAG:-latest}
+    container_name: aslan_data_ingestion_manual
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@postgres:5432/aslan_drive
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CONTINUOUS_MODE: "false"
+    networks:
+      - aslan_network
+    restart: "no"  # Don't auto-restart - job should complete
+    profiles:
+      - manual-execution
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+      restart_policy:
+        condition: none
+    labels:
+      - "aslan.service=data-ingestion"
+      - "aslan.tier=processing"
+      - "aslan.execution=manual"
+      - "portainer.job.description=Run daily data ingestion manually"
+      - "portainer.job.schedule=Daily at 6:00 AM"
+
+  # Health Check Job - Manual execution container
+  health_check:
+    image: ${DOCKER_REGISTRY:-ghcr.io/[YOUR_USERNAME]/aslan-drive}-health-check:${IMAGE_TAG:-latest}
+    container_name: aslan_health_check_manual
+    environment:
+      DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@postgres:5432/aslan_drive
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CONTINUOUS_MODE: "false"
+    networks:
+      - aslan_network
+    restart: "no"  # Don't auto-restart - job should complete
+    profiles:
+      - manual-execution
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+      restart_policy:
+        condition: none
+    labels:
+      - "aslan.service=health-check"
+      - "aslan.tier=monitoring"
+      - "aslan.execution=manual"
+      - "portainer.job.description=Run database health check manually"
+      - "portainer.job.schedule=Daily at 8:00 AM"
+
+networks:
+  aslan_network:
+    name: aslan_network
+    external: true

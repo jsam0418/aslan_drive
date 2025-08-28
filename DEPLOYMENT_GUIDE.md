@@ -1,348 +1,240 @@
-# 🚀 Aslan Drive Independent Deployment Guide
+# Aslan Drive - Kubernetes & Portainer Deployment Guide
 
-## Overview
-Deploy Aslan Drive services independently for production environments using Portainer, systemd, or N8n scheduling. Each service runs autonomously with proper orchestration and monitoring.
+Container-based deployment with Kubernetes CronJobs and Portainer integration for automated job scheduling and image management.
 
-## 🏗️ Architecture for Independent Deployment
+## Architecture Overview
 
-### Always-Running Services
-- **PostgreSQL**: Core database (24/7 uptime)
-- **MD Provider API**: REST API for data access (24/7 uptime)
+### Container Strategy
+- **Individual Containers**: Each service has its own container image
+- **GitHub Container Registry**: All images built and stored in GHCR
+- **Automated CI/CD**: Images automatically built on code changes
+- **Kubernetes CronJobs**: Automated job scheduling
+- **Portainer Integration**: Manual job execution and management
 
-### Scheduled Services  
-- **Data Ingestion**: Daily at 6:00 AM (scheduled execution)
-- **Health Check**: Daily at 8:00 AM (scheduled execution)
+### Services
+- **Data Ingestion**: Scheduled daily data processing (6 AM UTC)
+- **Health Check**: Database validation with Slack notifications (8 AM UTC)
+- **MD Provider API**: REST API for market data (always running)
+- **PostgreSQL**: Database service (always running)
 
-### Weekly Maintenance
-- **Database Backup**: Weekly automated backup
-- **Host Restart**: Weekly system maintenance window
+## Container Images
 
-## 📋 Deployment Options
+All images are built automatically via GitHub Actions and pushed to GitHub Container Registry:
 
-### Option 1: Portainer + Manual Scheduling (Recommended)
-**Best for**: Production environments with Portainer UI management
-- Visual container management
-- Manual job triggering
-- Resource monitoring and logs
-- Easy scaling and updates
-
-**Setup Steps**:
-1. Deploy infrastructure stack (always running)
-2. Deploy job containers (manual execution)
-3. Set up external scheduling (systemd/cron)
-
-### Option 2: Systemd Timers
-**Best for**: Linux servers with systemd
-- Native Linux scheduling
-- Automatic startup and restart
-- System journal logging
-- Resource limits and security
-
-### Option 3: N8n Workflows
-**Best for**: Complex automation and monitoring
-- Visual workflow editor
-- Advanced error handling
-- Integration with external systems
-- Real-time monitoring and alerts
-
-## 🛠️ Quick Start Deployment
-
-### Step 1: Prepare Environment
-```bash
-# Clone repository
-git clone <repository-url> /opt/aslan-drive
-cd /opt/aslan-drive
-
-# Build images
-make docker-build
-
-# Configure environment
-cp .env.production .env
-vim .env  # Edit passwords and URLs
+```
+ghcr.io/[USERNAME]/aslan-drive-data-ingestion:latest
+ghcr.io/[USERNAME]/aslan-drive-health-check:latest
+ghcr.io/[USERNAME]/aslan-drive-md-provider:latest
 ```
 
-### Step 2: Deploy Infrastructure (Always Running)
-```bash
-# Using Portainer
-# 1. Import portainer/infrastructure-stack.yml
-# 2. Set environment variables
-# 3. Deploy stack
+## Deployment Options
 
-# OR using Docker Compose
-docker-compose -f docker-compose.infrastructure.yml up -d
+### Option 1: Kubernetes with CronJobs (Recommended)
+
+#### Prerequisites
+- Kubernetes cluster (K3s, K8s, etc.)
+- kubectl configured
+- Access to GitHub Container Registry
+
+#### Quick Deploy
+```bash
+# 1. Clone repository
+git clone <repository-url>
+cd aslan_drive
+
+# 2. Update image references in k8s/ manifests
+# Edit k8s/cronjobs/*.yaml and k8s/deployments/*.yaml
+# Replace [YOUR_GITHUB_USERNAME] with your actual username
+
+# 3. Create namespace and secrets
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/secrets.yaml
+
+# 4. Deploy MD Provider (always running)
+kubectl apply -f k8s/deployments/md-provider-deployment.yaml
+
+# 5. Deploy CronJobs (scheduled execution)
+kubectl apply -f k8s/cronjobs/data-ingestion-cronjob.yaml
+kubectl apply -f k8s/cronjobs/health-check-cronjob.yaml
 ```
 
-### Step 3: Set Up Scheduling
-
-#### Option A: Systemd (Linux)
+#### Verify Deployment
 ```bash
-# Copy systemd files
-sudo cp systemd/*.service /etc/systemd/system/
-sudo cp systemd/*.timer /etc/systemd/system/
+# Check CronJobs
+kubectl get cronjobs -n aslan-drive
 
-# Configure environment in service files
-sudo vim /etc/systemd/system/aslan-data-ingestion.service
+# Check deployments
+kubectl get deployments -n aslan-drive
 
-# Enable and start timers
-sudo systemctl enable aslan-data-ingestion.timer
-sudo systemctl enable aslan-health-check.timer
-sudo systemctl start aslan-data-ingestion.timer
-sudo systemctl start aslan-health-check.timer
-
-# Verify
-sudo systemctl list-timers aslan-*
-```
-
-#### Option B: Cron Jobs
-```bash
-# Add to root crontab
-sudo crontab -e
-
-# Add these lines:
-0 6 * * * /opt/aslan-drive/scripts/run_data_ingestion.sh
-0 8 * * * /opt/aslan-drive/scripts/run_health_check.sh
-0 2 * * 0 /opt/aslan-drive/scripts/backup_database.sh
-```
-
-#### Option C: N8n Integration
-```bash
-# Import workflow
-# 1. Load n8n/aslan-drive-workflow.json into N8n
-# 2. Configure Portainer API credentials
-# 3. Set up Slack webhook
-# 4. Activate workflow
-```
-
-## 🔧 Service Configuration
-
-### PostgreSQL Database
-- **Restart Policy**: `unless-stopped`
-- **Port**: 5432 (configurable)
-- **Memory Limit**: 512MB
-- **Backup**: Weekly automated
-- **Health Check**: Built-in pg_isready
-
-**Maintenance**:
-```bash
-# Weekly backup
-docker exec aslan_postgres pg_dump -U trader aslan_drive > backup_$(date +%Y%m%d).sql
-
-# Manual restart (maintenance window)
-docker restart aslan_postgres
+# View job execution history
+kubectl get jobs -n aslan-drive
 
 # Check logs
-docker logs aslan_postgres
+kubectl logs -n aslan-drive -l app=aslan-drive
 ```
 
-### MD Provider API
-- **Restart Policy**: `unless-stopped`  
-- **Port**: 8000 (configurable)
-- **Memory Limit**: 256MB
-- **Health Endpoint**: `/health`
-- **Auto-scaling**: Load balancer ready
+### Option 2: Portainer Stacks
 
-**Monitoring**:
+#### Deploy Infrastructure
+1. Open Portainer UI
+2. Go to **Stacks** → **Add stack**
+3. Name: `aslan-infrastructure`
+4. Upload `portainer/infrastructure-stack.yml`
+5. Set environment variables:
+   ```
+   DOCKER_REGISTRY=ghcr.io/your-username/aslan-drive
+   POSTGRES_PASSWORD=your_secure_password
+   IMAGE_TAG=latest
+   ```
+
+#### Deploy Scheduled Jobs
+1. Create stack: `aslan-scheduled-jobs`
+2. Upload `portainer/k8s-cronjobs-stack.yml`
+3. Use same environment variables
+
+#### Manual Job Execution
+- Go to **Containers** in Portainer
+- Find job container (e.g., `aslan_data_ingestion_manual`)
+- Click **Start** to run job
+- Monitor logs in real-time
+
+### Option 3: Local Development
+
 ```bash
-# Health check
-curl http://localhost:8000/health
+# Generate schema
+python3 tools/schema_generator.py
 
-# API documentation
-curl http://localhost:8000/docs
+# Build all images
+docker-compose --profile build up --build
 
-# Resource usage
-docker stats aslan_md_provider
+# Start infrastructure
+docker-compose up -d postgres md_provider
+
+# Run jobs manually
+docker run --rm --network aslan_drive_aslan_network \
+  -e "DATABASE_URL=postgresql://trader:trading123@postgres:5432/aslan_drive" \
+  aslan-drive-data-ingestion:latest
+
+docker run --rm --network aslan_drive_aslan_network \
+  -e "DATABASE_URL=postgresql://trader:trading123@postgres:5432/aslan_drive" \
+  aslan-drive-health-check:latest
 ```
 
-### Data Ingestion Job
-- **Execution**: Scheduled (not continuous)
-- **Schedule**: Daily at 6:00 AM
-- **Memory Limit**: 256MB
-- **Timeout**: 30 minutes
-- **Restart Policy**: No restart (job completion)
+## Configuration
 
-**Manual Execution**:
+### Environment Variables
+
+**Required:**
+- `DATABASE_URL`: PostgreSQL connection string
+- `POSTGRES_PASSWORD`: Database password
+
+**Optional:**
+- `SLACK_WEBHOOK_URL`: Slack notifications
+- `LOG_LEVEL`: Logging level (info, debug, error)
+- `IMAGE_TAG`: Container image tag
+
+### Secrets Management
+
+#### Kubernetes
 ```bash
-# Via script
-./scripts/run_data_ingestion.sh
-
-# Via Portainer
-# Start container: aslan_data_ingestion_manual
-
-# Via N8n
-# Trigger workflow manually
+# Create database secret
+kubectl create secret generic aslan-drive-secrets \
+  --from-literal=database-url="postgresql://user:pass@postgres:5432/aslan_drive" \
+  --from-literal=slack-webhook-url="https://hooks.slack.com/your/webhook" \
+  -n aslan-drive
 ```
 
-### Health Check Job
-- **Execution**: Scheduled (not continuous)
-- **Schedule**: Daily at 8:00 AM (after data ingestion)
-- **Memory Limit**: 128MB
-- **Timeout**: 5 minutes
-- **Notifications**: Slack integration
+#### Portainer
+Set environment variables in stack configuration.
 
-**Manual Execution**:
+## CI/CD Pipeline
+
+### GitHub Actions Workflow
+1. **Code Quality**: Linting, type checking, tests
+2. **Build Images**: Individual containers for each service
+3. **Push to GHCR**: Automatic image publishing
+4. **Integration Tests**: Full system testing
+
+### Image Tags
+- `latest`: Latest main branch
+- `main-<sha>`: Specific commit
+- `develop`: Development branch
+
+### Upgrading Production
 ```bash
-# Via script
-./scripts/run_health_check.sh
+# Kubernetes: Update image tag and apply
+kubectl set image cronjob/aslan-data-ingestion \
+  data-ingestion=ghcr.io/username/aslan-drive-data-ingestion:new-tag \
+  -n aslan-drive
 
-# Check logs
-tail -f /var/log/aslan/health_check_$(date +%Y%m%d).log
+# Portainer: Update IMAGE_TAG in stack environment variables
 ```
 
-## 📊 Monitoring & Alerting
+## Monitoring & Troubleshooting
 
-### Health Monitoring
-- **Database**: Connection and data freshness checks
-- **API**: Health endpoint and response times  
-- **Jobs**: Execution status and completion
-- **System**: Resource usage and logs
-
-### Slack Integration
-Configure webhook URL in environment:
+### Job Status
 ```bash
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+# Kubernetes: Check CronJob status
+kubectl describe cronjob aslan-data-ingestion -n aslan-drive
+
+# View job logs
+kubectl logs job/aslan-data-ingestion-<timestamp> -n aslan-drive
+
+# Portainer: View container logs in UI
 ```
-
-**Alert Types**:
-- ✅ Daily health check success
-- ❌ Data ingestion failures
-- ⚠️ Database connectivity issues
-- 📊 Weekly summary reports
-
-### Log Management
-**Locations**:
-- Container logs: `docker logs <container>`
-- Script logs: `/var/log/aslan/`
-- System logs: `journalctl -u aslan-*`
-
-**Retention**:
-- Container logs: 7 days (Docker daemon config)
-- Script logs: 30 days (automatic cleanup)
-- System logs: 90 days (journalctl config)
-
-## 🔒 Security & Backup
-
-### Security Best Practices
-- Use strong database passwords
-- Limit network access to necessary ports
-- Regular security updates
-- Monitor access logs
-- Encrypt backups
-
-### Backup Strategy
-- **Database**: Daily automated dumps
-- **Configuration**: Version controlled
-- **Logs**: Retained per policy
-- **Container Images**: Tagged and stored
-
-**Backup Script**:
-```bash
-#!/bin/bash
-# Weekly backup script
-DATE=$(date +%Y%m%d)
-docker exec aslan_postgres pg_dump -U trader aslan_drive | gzip > /backup/aslan_${DATE}.sql.gz
-
-# Cleanup old backups (keep 12 weeks)
-find /backup -name "aslan_*.sql.gz" -mtime +84 -delete
-```
-
-## 🚦 Troubleshooting
 
 ### Common Issues
 
-#### Data Ingestion Fails
+**Image Pull Failures:**
+- Verify GitHub Container Registry access
+- Check image tag exists
+- Ensure GHCR authentication
+
+**Job Execution Failures:**
+- Check database connectivity
+- Verify environment variables
+- Review container logs
+
+**Resource Issues:**
+- Monitor CPU/memory usage
+- Adjust resource limits in manifests
+- Check cluster resource availability
+
+### Health Checks
+
+**MD Provider API:**
 ```bash
-# Check database connectivity
-docker exec aslan_postgres pg_isready -U trader
-
-# Check network
-docker network inspect aslan_network
-
-# Review logs
-tail -f /var/log/aslan/data_ingestion_$(date +%Y%m%d).log
-```
-
-#### Health Check Fails
-```bash
-# Manual health check
 curl http://localhost:8000/health
-
-# Check Slack webhook
-curl -X POST $SLACK_WEBHOOK_URL -d '{"text":"Test message"}'
-
-# Check data freshness
-docker exec aslan_postgres psql -U trader -d aslan_drive -c "SELECT MAX(date) FROM daily_ohlcv;"
 ```
 
-#### Service Won't Start
+**Database:**
 ```bash
-# Check dependencies
-docker ps | grep aslan
-
-# Check resources
-df -h
-free -m
-
-# Check systemd status
-sudo systemctl status aslan-data-ingestion.timer
-sudo journalctl -u aslan-data-ingestion.service
+kubectl exec -it postgres-pod -n aslan-drive -- pg_isready -U trader
 ```
 
-### Performance Tuning
-
-#### Database Optimization
-```sql
--- PostgreSQL tuning for time-series data
-ALTER SYSTEM SET shared_buffers = '256MB';
-ALTER SYSTEM SET effective_cache_size = '1GB';
-ALTER SYSTEM SET maintenance_work_mem = '64MB';
-SELECT pg_reload_conf();
+## File Structure
+```
+aslan_drive/
+├── k8s/                          # Kubernetes manifests
+│   ├── cronjobs/                 # CronJob definitions
+│   ├── deployments/              # Service deployments  
+│   ├── namespace.yaml            # Namespace definition
+│   └── secrets.yaml              # Secret templates
+├── portainer/                    # Portainer configurations
+│   ├── infrastructure-stack.yml  # Always-running services
+│   ├── k8s-cronjobs-stack.yml   # Manual job containers
+│   └── README.md                 # Portainer guide
+├── services/                     # Service code + Dockerfiles
+│   ├── data_ingestion/
+│   ├── health_check/
+│   └── md_provider/
+└── .github/workflows/ci.yml      # CI/CD pipeline
 ```
 
-#### Container Resource Limits
-```yaml
-# Adjust in docker-compose files
-deploy:
-  resources:
-    limits:
-      memory: 512M
-      cpus: '0.5'
-    reservations:
-      memory: 256M
-      cpus: '0.25'
-```
+## Production Recommendations
 
-## 🔄 Maintenance Windows
-
-### Weekly Maintenance (Sunday 2:00 AM)
-1. **Stop Scheduled Jobs**: Disable timers/workflows
-2. **Backup Database**: Full backup and verification
-3. **Update Images**: Pull latest versions
-4. **System Updates**: OS and security patches
-5. **Restart Services**: Clean restart of all services
-6. **Verify Health**: Run health checks
-7. **Re-enable Scheduling**: Activate timers/workflows
-
-### Monthly Maintenance
-- Review and archive logs
-- Update SSL certificates
-- Security audit
-- Performance review
-- Capacity planning
-
-## 📈 Scaling Considerations
-
-### Horizontal Scaling
-- **MD Provider**: Multiple instances behind load balancer
-- **Database**: Read replicas for API queries
-- **Jobs**: Parallel execution with data partitioning
-
-### Vertical Scaling
-- **Memory**: Increase container limits based on data volume
-- **CPU**: Scale up for faster processing
-- **Storage**: Monitor database growth and extend volumes
-
-### High Availability
-- **Database**: Master-slave replication
-- **API**: Multiple instances with health checks
-- **Scheduling**: Redundant scheduling systems
-- **Monitoring**: Multiple alert channels
+1. **Security**: Use proper secrets management
+2. **Monitoring**: Set up log aggregation (ELK, Grafana)
+3. **Backup**: Regular database backups
+4. **Scaling**: Configure resource limits appropriately
+5. **Updates**: Automated image updates with proper testing

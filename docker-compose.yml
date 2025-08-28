@@ -3,13 +3,13 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15
+    container_name: aslan_postgres
     environment:
       POSTGRES_DB: aslan_drive
       POSTGRES_USER: trader
       POSTGRES_PASSWORD: trading123
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./generated/migration.sql:/docker-entrypoint-initdb.d/01-schema.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -20,71 +20,42 @@ services:
     networks:
       - aslan_network
 
-  base_build:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.base
-    image: aslan_drive_base:latest
-    volumes:
-      - .:/app
-    networks:
-      - aslan_network
-
+  # Build individual service images
   data_ingestion:
     build:
       context: .
-      dockerfile: docker/Dockerfile.data_ingestion
-    depends_on:
-      base_build:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
-    volumes:
-      - .:/app
+      dockerfile: services/data_ingestion/Dockerfile
+    image: aslan-drive-data-ingestion:latest
+    profiles: ["build"]
     networks:
       - aslan_network
-    restart: unless-stopped
-
-  md_provider:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.md_provider
-    depends_on:
-      base_build:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
-    ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
-    networks:
-      - aslan_network
-    restart: unless-stopped
 
   health_check:
     build:
       context: .
-      dockerfile: docker/Dockerfile.health_check
-    depends_on:
-      base_build:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      data_ingestion:
-        condition: service_started
-    environment:
-      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
-    volumes:
-      - .:/app
+      dockerfile: services/health_check/Dockerfile
+    image: aslan-drive-health-check:latest
+    profiles: ["build"]
     networks:
       - aslan_network
-    restart: "no"
+
+  md_provider:
+    build:
+      context: .
+      dockerfile: services/md_provider/Dockerfile
+    image: aslan-drive-md-provider:latest
+    container_name: aslan_md_provider
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://trader:trading123@postgres:5432/aslan_drive
+      LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+    networks:
+      - aslan_network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

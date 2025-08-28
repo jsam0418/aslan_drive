@@ -10,7 +10,7 @@ class DailyOhlcv(Base):
     """
     __tablename__ = "daily_ohlcv"
 
-    symbol = Column(String(20), nullable=False)  # Financial instrument symbol
+    symbol = Column(String(20), primary_key=True, nullable=False)  # Financial instrument symbol
     date = Column(Date, primary_key=True, nullable=False)  # Trading date
     open = Column(Numeric(15,4), nullable=False)  # Opening price
     high = Column(Numeric(15,4), nullable=False)  # Highest price during the trading day

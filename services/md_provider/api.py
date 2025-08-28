@@ -5,6 +5,7 @@ FastAPI-based REST API for serving OHLCV data from the database.
 """
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import List, Optional
 from pathlib import Path
@@ -62,13 +63,6 @@ class HealthStatus(BaseModel):
     total_records: Optional[int] = Field(None, description="Total OHLCV records")
 
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Aslan Drive Market Data Provider",
-    description="REST API for accessing historical OHLCV market data",
-    version="0.1.0"
-)
-
 # Global database manager
 db_manager = None
 
@@ -81,15 +75,29 @@ def get_db_manager() -> DatabaseManager:
     return db_manager
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize and cleanup services."""
     global db_manager
     db_manager = DatabaseManager()
     
     # Test database connection
     if not db_manager.test_connection():
         raise RuntimeError("Failed to connect to database")
+    
+    yield
+    
+    # Cleanup on shutdown
+    db_manager = None
+
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Aslan Drive Market Data Provider",
+    description="REST API for accessing historical OHLCV market data",
+    version="0.1.0",
+    lifespan=lifespan
+)
 
 
 @app.get("/health", response_model=HealthStatus)

@@ -9,6 +9,7 @@
           "type": "VARCHAR(20)",
           "python_type": "str",
           "nullable": false,
+          "primary_key": true,
           "description": "Financial instrument symbol"
         },
         "date": {

@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aslan-health-check
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: health-check
+spec:
+  schedule: "0 8 * * *"  # Daily at 8:00 AM UTC
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: aslan-drive
+            component: health-check
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: health-check
+            image: ghcr.io/[YOUR_GITHUB_USERNAME]/aslan-drive-health-check:latest
+            imagePullPolicy: Always
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aslan-drive-secrets
+                  key: database-url
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: aslan-drive-secrets
+                  key: slack-webhook-url
+            - name: LOG_LEVEL
+              value: "info"
+            - name: CONTINUOUS_MODE
+              value: "false"
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
+          imagePullSecrets:
+          - name: ghcr-secret

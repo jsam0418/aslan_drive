@@ -1,6 +1,6 @@
 -- Migration script generated from JSON schema
 -- Schema version: 1.0.0
--- Generated at: 2025-08-27T13:45:19.499638
+-- Generated at: 2025-08-27T17:07:58.317961
 
 -- Create table: daily_ohlcv
 CREATE TABLE IF NOT EXISTS daily_ohlcv (
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS daily_ohlcv (
     close DECIMAL(15,4) NOT NULL,
     volume BIGINT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (date)
+    PRIMARY KEY (symbol, date)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_ohlcv_symbol_date ON daily_ohlcv (symbol, date);

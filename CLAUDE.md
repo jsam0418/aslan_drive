@@ -8,17 +8,19 @@ Aslan Drive is an algorithmic/quantitative trading infrastructure project with a
 
 ## Project Architecture
 
-### Core Components (Phase 0 Implementation)
+### Core Components
 1. **Data Ingestion Service** (`services/data_ingestion/`): Mock OHLCV data generator with PostgreSQL storage
-2. **MD Provider API** (`services/md_provider/`): FastAPI REST service for market data queries
+2. **MD Provider API** (`services/md_provider/`): FastAPI REST service for market data queries  
 3. **Health Check Service** (`services/health_check/`): Database validation with Slack notifications
 4. **Schema Generator** (`tools/schema_generator.py`): JSON→Python dataclasses + SQL migrations
 
 ### Technology Stack
 - **Python 3.11+** with FastAPI, SQLAlchemy, pytest
 - **PostgreSQL** with TimescaleDB-ready schemas
-- **Docker + Docker Compose** for full containerization
-- **Make** for build orchestration and development workflows
+- **Kubernetes CronJobs** for job scheduling and automation
+- **Docker containers** for individual service deployment
+- **GitHub Container Registry** for image storage and distribution
+- **Portainer** for container management and manual job execution
 - **Slack API** for alerting and notifications
 
 ## Commands
@@ -91,31 +93,29 @@ Example workflow for schema changes:
 - Integration tests: `pytest tests/test_integration.py`
 - Database tests use SQLite for isolation
 
-## Independent Service Deployment
+## Container-Based Deployment Architecture
 
 ### Production Architecture
-The system is designed for independent service deployment:
+Individual containers with Kubernetes CronJob scheduling:
 
 **Always-Running Services**:
 - **PostgreSQL**: Core database (24/7)
 - **MD Provider API**: REST data access (24/7)
 
-**Scheduled Services**:
-- **Data Ingestion**: Daily at 6:00 AM (one-time execution)
-- **Health Check**: Daily at 8:00 AM (one-time execution)
+**Scheduled Jobs (via K8s CronJobs)**:
+- **Data Ingestion**: Daily at 6:00 AM UTC
+- **Health Check**: Daily at 8:00 AM UTC
 
 ### Deployment Options
-- **Portainer**: Visual container management with manual job triggering
-- **Systemd**: Native Linux scheduling with automatic restarts
-- **N8n**: Advanced workflow automation with error handling
-- **Cron**: Simple scheduled execution
+- **Kubernetes**: CronJobs for automated scheduling (recommended)
+- **Portainer**: Manual job execution via container management
+- **Docker Compose**: Local development and testing
 
-### Key Files for Production
-- `docker-compose.infrastructure.yml` - Always-running services
-- `portainer/infrastructure-stack.yml` - Portainer-ready stack
-- `systemd/*.service` - Systemd service definitions
-- `scripts/run_*.sh` - Standalone execution scripts
-- `n8n/aslan-drive-workflow.json` - N8n automation workflow
+### Key Files
+- `k8s/` - Kubernetes manifests (CronJobs, Deployments, Secrets)
+- `portainer/` - Portainer stack configurations
+- `services/*/Dockerfile` - Individual service containers
+- `.github/workflows/ci.yml` - CI/CD pipeline for image builds
 
 ### CI/CD Pipeline
 - **GitHub Actions**: Automated testing, building, and deployment
@@ -131,8 +131,9 @@ The system is designed for independent service deployment:
 
 ## Key Design Principles
 
-- **Independent Services**: Each component can be deployed and scaled separately
+- **Container-First Architecture**: Each service has its own container image
 - **Schema-First Development**: JSON schema drives all data structures
-- **Scheduled Execution**: Jobs run on-demand rather than continuously
+- **Kubernetes-Native Scheduling**: CronJobs for automated execution
+- **CI/CD Integration**: Automated image builds and deployments
 - **Production Ready**: Proper logging, monitoring, and error handling
-- **Multiple Orchestration Options**: Portainer, systemd, N8n, or cron scheduling
+- **Multi-Platform Deployment**: Kubernetes, Portainer, and Docker Compose support
