@@ -2,7 +2,7 @@
 # Deploy this stack first for always-running services
 #
 # Stack Name: aslan-infrastructure
-# Description: PostgreSQL database and MD Provider API
+# Description: PostgreSQL database, MD Provider API, and pgAdmin frontend
 
 version: '3.8'
 
@@ -69,11 +69,42 @@ services:
       - "aslan.service=md-provider"
       - "aslan.tier=api"
 
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: aslan_pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-supersecret}
+    ports:
+      - "${PGADMIN_PORT:-8080}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - aslan_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    labels:
+      - "aslan.service=pgadmin"
+      - "aslan.tier=frontend"
+
 volumes:
   postgres_data:
     name: aslan_postgres_data
+  pgadmin_data:
+    name: aslan_pgadmin_data
 
 networks:
   aslan_network:
     name: aslan_network
     driver: bridge
+
