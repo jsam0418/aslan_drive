@@ -7,6 +7,12 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
 
+# Add this permissions block - CRITICAL!
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -109,11 +115,12 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    # FIXED: Use forward slash instead of hyphen for proper GHCR naming
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service.name }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service.name }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
