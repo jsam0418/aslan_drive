@@ -1,6 +1,6 @@
 -- Migration script generated from JSON schema
 -- Schema version: 1.0.0
--- Generated at: 2025-08-27T20:43:09.458612
+-- Generated at: 2025-08-28T12:02:10.628348
 
 -- Create table: daily_ohlcv
 CREATE TABLE IF NOT EXISTS daily_ohlcv (
