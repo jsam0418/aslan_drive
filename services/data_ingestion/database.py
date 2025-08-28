@@ -1,39 +1,37 @@
 """
 Database connection and operations for data ingestion service
 """
-import os
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import SQLAlchemyError
-from contextlib import contextmanager
 import logging
+import os
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
     """Manages database connections and operations."""
-    
+
     def __init__(self, database_url: str = None):
         """Initialize database manager with connection URL."""
         self.database_url = database_url or os.getenv(
-            'DATABASE_URL', 
-            'postgresql://trader:trading123@localhost:5432/aslan_drive'
+            "DATABASE_URL", "postgresql://trader:trading123@localhost:5432/aslan_drive"
         )
-        
+
         self.engine = create_engine(
             self.database_url,
             echo=False,  # Set to True for SQL debugging
             pool_pre_ping=True,  # Verify connections before use
-            pool_recycle=3600,   # Recycle connections after 1 hour
+            pool_recycle=3600,  # Recycle connections after 1 hour
         )
-        
+
         self.SessionLocal = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=self.engine
+            autocommit=False, autoflush=False, bind=self.engine
         )
-    
+
     @contextmanager
     def get_session(self) -> Session:
         """Get a database session with automatic cleanup."""
@@ -47,7 +45,7 @@ class DatabaseManager:
             raise
         finally:
             session.close()
-    
+
     def test_connection(self) -> bool:
         """Test database connectivity."""
         try:
@@ -58,38 +56,41 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             logger.error(f"Database connection failed: {e}")
             return False
-    
+
     def execute_migration(self, migration_sql: str) -> bool:
         """Execute migration SQL script."""
         try:
             with self.engine.connect() as conn:
                 # Split by statements and execute each
-                statements = [stmt.strip() for stmt in migration_sql.split(';') if stmt.strip()]
-                
+                statements = [
+                    stmt.strip() for stmt in migration_sql.split(";") if stmt.strip()
+                ]
+
                 for stmt in statements:
                     if stmt:
                         conn.execute(text(stmt))
                         logger.debug(f"Executed: {stmt[:50]}...")
-                
+
                 conn.commit()
                 logger.info("Migration executed successfully")
                 return True
         except SQLAlchemyError as e:
             logger.error(f"Migration failed: {e}")
             return False
-    
+
     def insert_daily_ohlcv_data(self, data_records: list) -> int:
         """Insert daily OHLCV data records, return number of inserted records."""
         if not data_records:
             return 0
-        
+
         inserted_count = 0
-        
+
         try:
             with self.get_session() as session:
                 for record in data_records:
                     # Use raw SQL for better control over conflict handling
-                    insert_sql = text("""
+                    insert_sql = text(
+                        """
                         INSERT INTO daily_ohlcv 
                         (symbol, date, open, high, low, close, volume, created_at)
                         VALUES 
@@ -101,30 +102,32 @@ class DatabaseManager:
                             close = EXCLUDED.close,
                             volume = EXCLUDED.volume,
                             created_at = EXCLUDED.created_at
-                    """)
-                    
+                    """
+                    )
+
                     session.execute(insert_sql, record)
                     inserted_count += 1
-                
+
                 logger.info(f"Inserted/updated {inserted_count} OHLCV records")
-        
+
         except SQLAlchemyError as e:
             logger.error(f"Failed to insert OHLCV data: {e}")
             raise
-        
+
         return inserted_count
-    
+
     def insert_symbols_metadata(self, metadata_records: list) -> int:
         """Insert symbols metadata, return number of inserted records."""
         if not metadata_records:
             return 0
-        
+
         inserted_count = 0
-        
+
         try:
             with self.get_session() as session:
                 for record in metadata_records:
-                    insert_sql = text("""
+                    insert_sql = text(
+                        """
                         INSERT INTO symbols 
                         (symbol, name, asset_class, exchange, currency, active, created_at, updated_at)
                         VALUES 
@@ -136,49 +139,58 @@ class DatabaseManager:
                             currency = EXCLUDED.currency,
                             active = EXCLUDED.active,
                             updated_at = EXCLUDED.updated_at
-                    """)
-                    
+                    """
+                    )
+
                     session.execute(insert_sql, record)
                     inserted_count += 1
-                
-                logger.info(f"Inserted/updated {inserted_count} symbol metadata records")
-        
+
+                logger.info(
+                    f"Inserted/updated {inserted_count} symbol metadata records"
+                )
+
         except SQLAlchemyError as e:
             logger.error(f"Failed to insert symbols metadata: {e}")
             raise
-        
+
         return inserted_count
-    
+
     def get_latest_data_date(self, symbol: str = None) -> str:
         """Get the latest date for which we have data."""
         try:
             with self.get_session() as session:
                 if symbol:
-                    query = text("SELECT MAX(date) FROM daily_ohlcv WHERE symbol = :symbol")
+                    query = text(
+                        "SELECT MAX(date) FROM daily_ohlcv WHERE symbol = :symbol"
+                    )
                     result = session.execute(query, {"symbol": symbol}).scalar()
                 else:
                     query = text("SELECT MAX(date) FROM daily_ohlcv")
                     result = session.execute(query).scalar()
-                
+
                 return result.isoformat() if result else None
-        
+
         except SQLAlchemyError as e:
             logger.error(f"Failed to get latest data date: {e}")
             return None
-    
+
     def check_data_exists_for_date(self, check_date: str, symbol: str = None) -> bool:
         """Check if data exists for a specific date."""
         try:
             with self.get_session() as session:
                 if symbol:
-                    query = text("SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date AND symbol = :symbol")
-                    count = session.execute(query, {"date": check_date, "symbol": symbol}).scalar()
+                    query = text(
+                        "SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date AND symbol = :symbol"
+                    )
+                    count = session.execute(
+                        query, {"date": check_date, "symbol": symbol}
+                    ).scalar()
                 else:
                     query = text("SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date")
                     count = session.execute(query, {"date": check_date}).scalar()
-                
+
                 return count > 0
-        
+
         except SQLAlchemyError as e:
             logger.error(f"Failed to check data existence: {e}")
             return False

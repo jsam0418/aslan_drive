@@ -36,20 +36,26 @@ clean: ## Clean generated files
 	rm -rf generated/*
 	mkdir -p generated
 
-format: ## Format code with black
-	python3 -m black services/ tools/ tests/
+format: ## Format code with black and isort
+	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
+	python3 -m isort services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
+	python3 -m black services/ tools/ tests/ || (echo "Run: pip install black" && exit 1)
 
 format-check: ## Check code formatting
-	python3 -m black --check --diff services/ tools/ tests/
+	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
+	python3 -m black --check --diff services/ tools/ tests/ || (echo "Run: pip install black" && exit 1)
 
 lint: ## Check code style and imports
-	python3 -m isort --check-only --diff services/ tools/ tests/
+	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
+	python3 -m isort --check-only --diff services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
 
 lint-fix: ## Fix import order
-	python3 -m isort services/ tools/ tests/
+	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
+	python3 -m isort services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
 
 typecheck: ## Run type checking
-	python3 -m mypy services/ tools/ --ignore-missing-imports
+	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
+	python3 -m mypy services/ tools/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1)
 
 docker-build: build ## Build Docker images
 	docker-compose build
