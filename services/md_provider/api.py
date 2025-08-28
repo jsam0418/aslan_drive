@@ -6,7 +6,8 @@ FastAPI-based REST API for serving OHLCV data from the database.
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date as Date
+from datetime import datetime as DateTime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,18 +27,18 @@ from services.data_ingestion.database import DatabaseManager
 # Pydantic models for API responses
 class OHLCVData(BaseModel):
     symbol: str = Field(..., description="Financial instrument symbol")
-    date: date = Field(..., description="Trading date")
+    date: Date = Field(..., description="Trading date")
     open: float = Field(..., description="Opening price")
     high: float = Field(..., description="Highest price")
     low: float = Field(..., description="Lowest price")
     close: float = Field(..., description="Closing price")
     volume: int = Field(..., description="Trading volume")
-    created_at: datetime = Field(..., description="Record creation timestamp")
+    created_at: DateTime = Field(..., description="Record creation timestamp")
 
     class Config:
         json_encoders = {
-            date: lambda v: v.isoformat(),
-            datetime: lambda v: v.isoformat(),
+            Date: lambda v: v.isoformat(),
+            DateTime: lambda v: v.isoformat(),
         }
 
 
@@ -48,11 +49,11 @@ class SymbolMetadata(BaseModel):
     exchange: Optional[str] = Field(None, description="Primary exchange")
     currency: str = Field(..., description="Base currency")
     active: bool = Field(..., description="Whether symbol is actively tracked")
-    created_at: datetime = Field(..., description="Record creation timestamp")
-    updated_at: datetime = Field(..., description="Record last updated timestamp")
+    created_at: DateTime = Field(..., description="Record creation timestamp")
+    updated_at: DateTime = Field(..., description="Record last updated timestamp")
 
     class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+        json_encoders = {DateTime: lambda v: v.isoformat()}
 
 
 class HealthStatus(BaseModel):
@@ -204,8 +205,8 @@ async def get_symbols(
 @app.get("/ohlcv/{symbol}", response_model=List[OHLCVData])
 async def get_ohlcv_data(
     symbol: str,
-    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    start_date: Optional[Date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[Date] = Query(None, description="End date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=10000, description="Maximum number of records"),
     db: DatabaseManager = Depends(get_db_manager),
 ):
@@ -259,7 +260,7 @@ async def get_ohlcv_data(
 @app.get("/ohlcv", response_model=List[OHLCVData])
 async def get_multi_symbol_ohlcv(
     symbols: str = Query(..., description="Comma-separated list of symbols"),
-    date_filter: Optional[date] = Query(None, description="Specific date (YYYY-MM-DD)"),
+    date_filter: Optional[Date] = Query(None, description="Specific date (YYYY-MM-DD)"),
     limit: int = Query(1000, ge=1, le=10000, description="Maximum number of records"),
     db: DatabaseManager = Depends(get_db_manager),
 ):
