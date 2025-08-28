@@ -10,7 +10,7 @@ version: '3.8'
 services:
   # Data Ingestion Job - Manual execution container
   data_ingestion:
-    image: ${DOCKER_REGISTRY:-ghcr.io/[YOUR_USERNAME]/aslan-drive}-data-ingestion:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/jsam0418/aslan_drive/data-ingestion}:${IMAGE_TAG:-latest}
     container_name: aslan_data_ingestion_manual
     environment:
       DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@postgres:5432/aslan_drive
@@ -40,7 +40,7 @@ services:
 
   # Health Check Job - Manual execution container
   health_check:
-    image: ${DOCKER_REGISTRY:-ghcr.io/[YOUR_USERNAME]/aslan-drive}-health-check:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/jsam0418/aslan_drive/health-check}:${IMAGE_TAG:-latest}
     container_name: aslan_health_check_manual
     environment:
       DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@postgres:5432/aslan_drive

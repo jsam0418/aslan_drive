@@ -23,7 +23,7 @@ spec:
           restartPolicy: Never
           containers:
           - name: health-check
-            image: ghcr.io/[YOUR_GITHUB_USERNAME]/aslan-drive-health-check:latest
+            image: ghcr.io/jsam0418/aslan_drive/health-check:latest
             imagePullPolicy: Always
             env:
             - name: DATABASE_URL

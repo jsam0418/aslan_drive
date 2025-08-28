@@ -39,7 +39,7 @@ services:
       - "aslan.tier=infrastructure"
 
   md_provider:
-    image: ${DOCKER_REGISTRY:-ghcr.io/[YOUR_USERNAME]/aslan-drive}-md-provider:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/jsam0418/aslan_drive/md-provider}:${IMAGE_TAG:-latest}
     container_name: aslan_md_provider
     depends_on:
       postgres:
