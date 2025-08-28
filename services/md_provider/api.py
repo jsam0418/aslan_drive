@@ -8,12 +8,13 @@ import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -118,7 +119,7 @@ async def health_check(db: DatabaseManager = Depends(get_db_manager)):
             )
 
         # Get database statistics
-        with db.get_session() as session:
+        with db.get_session() as session:  # type: Session
             # Get latest data date
             latest_date_result = session.execute(
                 text("SELECT MAX(date) FROM daily_ohlcv")
@@ -161,10 +162,10 @@ async def get_symbols(
 ):
     """Get list of available symbols with metadata."""
     try:
-        with db.get_session() as session:
+        with db.get_session() as session:  # type: Session
             query = "SELECT * FROM symbols"
             conditions = []
-            params = {}
+            params: Dict[str, Any] = {}
 
             if active_only:
                 conditions.append("active = :active")
@@ -210,13 +211,13 @@ async def get_ohlcv_data(
 ):
     """Get OHLCV data for a specific symbol."""
     try:
-        with db.get_session() as session:
+        with db.get_session() as session:  # type: Session
             query = """
                 SELECT symbol, date, open, high, low, close, volume, created_at 
                 FROM daily_ohlcv 
                 WHERE symbol = :symbol
             """
-            params = {"symbol": symbol.upper()}
+            params: Dict[str, Any] = {"symbol": symbol.upper()}
 
             if start_date:
                 query += " AND date >= :start_date"
@@ -271,7 +272,7 @@ async def get_multi_symbol_ohlcv(
                 status_code=400, detail="Too many symbols requested (max 50)"
             )
 
-        with db.get_session() as session:
+        with db.get_session() as session:  # type: Session
             placeholders = ",".join([f":symbol_{i}" for i in range(len(symbol_list))])
             query = f"""
                 SELECT symbol, date, open, high, low, close, volume, created_at 
@@ -279,7 +280,9 @@ async def get_multi_symbol_ohlcv(
                 WHERE symbol IN ({placeholders})
             """
 
-            params = {f"symbol_{i}": symbol for i, symbol in enumerate(symbol_list)}
+            params: Dict[str, Any] = {
+                f"symbol_{i}": symbol for i, symbol in enumerate(symbol_list)
+            }
 
             if date_filter:
                 query += " AND date = :date_filter"
@@ -316,7 +319,8 @@ async def get_latest_data(
 ):
     """Get the most recent data for specified symbols or all symbols."""
     try:
-        with db.get_session() as session:
+        with db.get_session() as session:  # type: Session
+            params: Dict[str, Any] = {}
             if symbols:
                 symbol_list = [s.strip().upper() for s in symbols.split(",")]
                 placeholders = ",".join(

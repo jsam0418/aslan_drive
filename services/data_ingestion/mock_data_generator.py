@@ -5,7 +5,7 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,10 @@ class MockOHLCVGenerator:
         }
 
     def generate_historical_data(
-        self, symbols: List[str] = None, start_date: date = None, end_date: date = None
+        self,
+        symbols: Optional[List[str]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         """Generate historical OHLCV data for multiple symbols and date range."""
         if symbols is None:

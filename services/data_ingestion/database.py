@@ -4,6 +4,7 @@ Database connection and operations for data ingestion service
 import logging
 import os
 from contextlib import contextmanager
+from typing import Any, Generator, Optional
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,10 +16,15 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Manages database connections and operations."""
 
-    def __init__(self, database_url: str = None):
+    def __init__(self, database_url: Optional[str] = None):
         """Initialize database manager with connection URL."""
-        self.database_url = database_url or os.getenv(
-            "DATABASE_URL", "postgresql://trader:trading123@localhost:5432/aslan_drive"
+        self.database_url: str = (
+            database_url
+            or os.getenv(
+                "DATABASE_URL",
+                "postgresql://trader:trading123@localhost:5432/aslan_drive",
+            )
+            or "postgresql://trader:trading123@localhost:5432/aslan_drive"
         )
 
         self.engine = create_engine(
@@ -33,7 +39,7 @@ class DatabaseManager:
         )
 
     @contextmanager
-    def get_session(self) -> Session:
+    def get_session(self) -> Generator[Session, None, None]:
         """Get a database session with automatic cleanup."""
         session = self.SessionLocal()
         try:
@@ -86,7 +92,7 @@ class DatabaseManager:
         inserted_count = 0
 
         try:
-            with self.get_session() as session:
+            with self.get_session() as session:  # type: Session
                 for record in data_records:
                     # Use raw SQL for better control over conflict handling
                     insert_sql = text(
@@ -124,7 +130,7 @@ class DatabaseManager:
         inserted_count = 0
 
         try:
-            with self.get_session() as session:
+            with self.get_session() as session:  # type: Session
                 for record in metadata_records:
                     insert_sql = text(
                         """
@@ -155,10 +161,10 @@ class DatabaseManager:
 
         return inserted_count
 
-    def get_latest_data_date(self, symbol: str = None) -> str:
+    def get_latest_data_date(self, symbol: Optional[str] = None) -> Optional[str]:
         """Get the latest date for which we have data."""
         try:
-            with self.get_session() as session:
+            with self.get_session() as session:  # type: Session
                 if symbol:
                     query = text(
                         "SELECT MAX(date) FROM daily_ohlcv WHERE symbol = :symbol"
@@ -174,10 +180,12 @@ class DatabaseManager:
             logger.error(f"Failed to get latest data date: {e}")
             return None
 
-    def check_data_exists_for_date(self, check_date: str, symbol: str = None) -> bool:
+    def check_data_exists_for_date(
+        self, check_date: str, symbol: Optional[str] = None
+    ) -> bool:
         """Check if data exists for a specific date."""
         try:
-            with self.get_session() as session:
+            with self.get_session() as session:  # type: Session
                 if symbol:
                     query = text(
                         "SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date AND symbol = :symbol"
@@ -189,7 +197,7 @@ class DatabaseManager:
                     query = text("SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date")
                     count = session.execute(query, {"date": check_date}).scalar()
 
-                return count > 0
+                return bool(count and count > 0)
 
         except SQLAlchemyError as e:
             logger.error(f"Failed to check data existence: {e}")

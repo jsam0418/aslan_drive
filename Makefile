@@ -90,6 +90,16 @@ quick-test: build test ## Quick build and test
 
 full-check: clean build test lint typecheck ## Full validation pipeline
 
+ci-local: ## Run local CI/CD pipeline simulation
+	@echo "🚀 Running Local CI/CD Pipeline..."
+	@echo "================================="
+	@$(MAKE) build
+	@$(MAKE) format-check
+	@$(MAKE) lint  
+	@$(MAKE) typecheck
+	@echo "✅ All CI/CD checks passed locally!"
+	@echo "You can safely push your changes."
+
 # Docker development workflows
 docker-dev: docker-build docker-up ## Build and start Docker services
 

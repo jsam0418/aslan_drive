@@ -63,6 +63,14 @@ make lint               # Check imports with isort
 make typecheck          # Run mypy type checking
 ```
 
+#### Local CI/CD Testing
+```bash
+make ci-local           # Run complete CI/CD pipeline locally
+./scripts/ci-local.sh   # Comprehensive testing with detailed output
+```
+
+For detailed local testing documentation, see: [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md)
+
 ## JSON Schema-Driven Development
 
 The project uses a unique schema-first approach:
