@@ -76,7 +76,7 @@ async def perform_health_check():
                 text("SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date"),
                 {"date": check_date},
             )
-            record_count = record_count_result.scalar()
+            record_count = record_count_result.scalar() or 0
 
             # Get symbols for the date
             symbols_result = session.execute(
