@@ -23,7 +23,7 @@ spec:
           restartPolicy: Never
           containers:
           - name: data-ingestion
-            image: ghcr.io/[YOUR_GITHUB_USERNAME]/aslan-drive-data-ingestion:latest
+            image: ghcr.io/jsam0418/aslan_drive/data-ingestion:latest
             imagePullPolicy: Always
             env:
             - name: DATABASE_URL

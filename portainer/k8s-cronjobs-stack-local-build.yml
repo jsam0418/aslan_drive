@@ -1,16 +1,18 @@
-# Portainer Stack: Aslan Drive K8s-style Scheduled Jobs
-# This stack creates containers that can be manually triggered via Portainer
-# Use these for testing/manual execution until K8s CronJobs are deployed
+# Portainer Stack: Aslan Drive Scheduled Jobs (Local Build for ARM64)
+# Use this for manual job execution on ARM64 architecture
+# This builds images locally from source code
 #
-# Stack Name: aslan-scheduled-jobs
+# Stack Name: aslan-scheduled-jobs-local
 # Description: Manual execution containers for data ingestion and health checks
 
 version: '3.8'
 
 services:
-  # Data Ingestion Job - Manual execution container
+  # Data Ingestion Job - Manual execution container (built locally)
   data_ingestion:
-    image: ${DOCKER_REGISTRY:-ghcr.io/jsam0418/aslan_drive/data-ingestion}:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: services/data_ingestion/Dockerfile
     container_name: aslan_data_ingestion_manual
     environment:
       DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@postgres:5432/aslan_drive
@@ -35,12 +37,14 @@ services:
       - "aslan.service=data-ingestion"
       - "aslan.tier=processing"
       - "aslan.execution=manual"
-      - "portainer.job.description=Run daily data ingestion manually"
+      - "portainer.job.description=Run daily data ingestion manually (ARM64 local build)"
       - "portainer.job.schedule=Daily at 6:00 AM"
 
-  # Health Check Job - Manual execution container
+  # Health Check Job - Manual execution container (built locally)
   health_check:
-    image: ${DOCKER_REGISTRY:-ghcr.io/jsam0418/aslan_drive/health-check}:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: services/health_check/Dockerfile
     container_name: aslan_health_check_manual
     environment:
       DATABASE_URL: postgresql://trader:${POSTGRES_PASSWORD}@postgres:5432/aslan_drive
@@ -66,7 +70,7 @@ services:
       - "aslan.service=health-check"
       - "aslan.tier=monitoring"
       - "aslan.execution=manual"
-      - "portainer.job.description=Run database health check manually"
+      - "portainer.job.description=Run database health check manually (ARM64 local build)"
       - "portainer.job.schedule=Daily at 8:00 AM"
 
 networks:
