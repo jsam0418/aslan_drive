@@ -1,0 +1,643 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    environment: production
+    managed-by: portainer-gitops
+    name: aslan-drive
+  name: aslan-drive
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    environment: production
+    managed-by: portainer-gitops
+  name: backup-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    environment: production
+    managed-by: portainer-gitops
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: md-provider
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-md-provider-service
+  namespace: aslan-drive
+spec:
+  ports:
+  - port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: aslan-drive
+    component: md-provider
+    environment: production
+    managed-by: portainer-gitops
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: postgres
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-postgres-service
+  namespace: aslan-drive
+spec:
+  ports:
+  - port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: aslan-drive
+    component: postgres
+    environment: production
+    managed-by: portainer-gitops
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: postgres
+    environment: production
+    managed-by: portainer-gitops
+  name: postgres
+  namespace: aslan-drive
+spec:
+  ports:
+  - port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: aslan-drive
+    component: postgres
+    environment: production
+    managed-by: portainer-gitops
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: db-backup-storage
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-db-backup-pv
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 20Gi
+  hostPath:
+    path: /data/db_backups
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - fisher
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: backup-storage
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: postgres-storage
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-postgres-pv
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  hostPath:
+    path: /db/postgres
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - fisher
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: db-backup
+    environment: production
+    managed-by: portainer-gitops
+  name: db-backup-pvc
+  namespace: aslan-drive
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: backup-storage
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: md-provider
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-md-provider
+  namespace: aslan-drive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aslan-drive
+      component: md-provider
+      environment: production
+      managed-by: portainer-gitops
+  template:
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      labels:
+        app: aslan-drive
+        component: md-provider
+        environment: production
+        managed-by: portainer-gitops
+    spec:
+      containers:
+      - env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: database-url
+              name: aslan-drive-secrets
+        - name: LOG_LEVEL
+          value: info
+        image: ghcr.io/jsam0418/aslan_drive/md-provider:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        name: md-provider
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+      imagePullSecrets:
+      - name: ghcr-secret
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: postgres
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-postgres
+  namespace: aslan-drive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aslan-drive
+      component: postgres
+      environment: production
+      managed-by: portainer-gitops
+  serviceName: aslan-postgres-service
+  template:
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      labels:
+        app: aslan-drive
+        component: postgres
+        environment: production
+        managed-by: portainer-gitops
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_DB
+          value: aslan_drive
+        - name: POSTGRES_USER
+          value: trader
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: postgres-password
+              name: aslan-drive-secrets
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:15
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trader
+            - -d
+            - aslan_drive
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trader
+            - -d
+            - aslan_drive
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-data
+  volumeClaimTemplates:
+  - metadata:
+      labels:
+        app: aslan-drive
+        component: postgres
+        environment: production
+        managed-by: portainer-gitops
+      name: postgres-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: local-storage
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: data-ingestion
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-data-ingestion
+  namespace: aslan-drive
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      labels:
+        app: aslan-drive
+        environment: production
+        managed-by: portainer-gitops
+    spec:
+      template:
+        metadata:
+          annotations:
+            deployment.kubernetes.io/revision: "1"
+          labels:
+            app: aslan-drive
+            component: data-ingestion
+            environment: production
+            managed-by: portainer-gitops
+        spec:
+          containers:
+          - env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: database-url
+                  name: aslan-drive-secrets
+            - name: LOG_LEVEL
+              value: info
+            - name: CONTINUOUS_MODE
+              value: "false"
+            image: ghcr.io/jsam0418/aslan_drive/data-ingestion:latest
+            imagePullPolicy: Always
+            name: data-ingestion
+            resources:
+              limits:
+                cpu: 200m
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          imagePullSecrets:
+          - name: ghcr-secret
+          restartPolicy: Never
+  schedule: 0 22 * * 1-5
+  successfulJobsHistoryLimit: 3
+  timeZone: UTC
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: db-backup
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-db-backup
+  namespace: aslan-drive
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      labels:
+        app: aslan-drive
+        environment: production
+        managed-by: portainer-gitops
+    spec:
+      template:
+        metadata:
+          annotations:
+            deployment.kubernetes.io/revision: "1"
+          labels:
+            app: aslan-drive
+            component: db-backup
+            environment: production
+            managed-by: portainer-gitops
+        spec:
+          containers:
+          - command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="/backup/aslan_drive_backup_${BACKUP_DATE}.sql"
+
+              echo "Starting database backup to $BACKUP_FILE"
+
+              # Create backup with pg_dump
+              pg_dump \
+                --host=$POSTGRES_HOST \
+                --port=5432 \
+                --username=$POSTGRES_USER \
+                --dbname=$POSTGRES_DB \
+                --verbose \
+                --clean \
+                --create \
+                --if-exists \
+                --format=custom \
+                --file="${BACKUP_FILE}.custom"
+
+              # Also create a plain SQL backup for easy restoration
+              pg_dump \
+                --host=$POSTGRES_HOST \
+                --port=5432 \
+                --username=$POSTGRES_USER \
+                --dbname=$POSTGRES_DB \
+                --verbose \
+                --clean \
+                --create \
+                --if-exists \
+                --file="${BACKUP_FILE}"
+
+              # Compress the plain SQL backup
+              gzip "${BACKUP_FILE}"
+
+              echo "Backup completed successfully"
+
+              # Clean up old backups (keep last 8 weeks)
+              find /backup -name "aslan_drive_backup_*.sql.gz" -mtime +56 -delete || true
+              find /backup -name "aslan_drive_backup_*.custom" -mtime +56 -delete || true
+
+              echo "Old backups cleaned up"
+              ls -la /backup/
+            env:
+            - name: POSTGRES_HOST
+              value: postgres
+            - name: POSTGRES_DB
+              value: aslan_drive
+            - name: POSTGRES_USER
+              value: trader
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: postgres-password
+                  name: aslan-drive-secrets
+            - name: TZ
+              value: America/New_York
+            image: postgres:15
+            name: db-backup
+            resources:
+              limits:
+                cpu: 200m
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            volumeMounts:
+            - mountPath: /backup
+              name: backup-storage
+          restartPolicy: OnFailure
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: db-backup-pvc
+  schedule: 0 4 * * 6
+  successfulJobsHistoryLimit: 4
+  timeZone: UTC
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: health-check
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-health-check
+  namespace: aslan-drive
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      labels:
+        app: aslan-drive
+        environment: production
+        managed-by: portainer-gitops
+    spec:
+      template:
+        metadata:
+          annotations:
+            deployment.kubernetes.io/revision: "1"
+          labels:
+            app: aslan-drive
+            component: health-check
+            environment: production
+            managed-by: portainer-gitops
+        spec:
+          containers:
+          - env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: database-url
+                  name: aslan-drive-secrets
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: slack-webhook-url
+                  name: aslan-drive-secrets
+            - name: LOG_LEVEL
+              value: info
+            - name: CONTINUOUS_MODE
+              value: "false"
+            image: ghcr.io/jsam0418/aslan_drive/health-check:latest
+            imagePullPolicy: Always
+            name: health-check
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+          imagePullSecrets:
+          - name: ghcr-secret
+          restartPolicy: Never
+  schedule: 0 23 * * 1-5
+  successfulJobsHistoryLimit: 3
+  timeZone: UTC
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: null
+  labels:
+    app: aslan-drive
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-drive-secrets
+  namespace: aslan-drive
+spec:
+  encryptedData:
+    database-url: AgCuck4d7Rct186aO1gJY+Rk3YSOi3/gj9rUt/BCHCIHIs4yD2HbxxsDXd6VJDCoeBIpdQ+BKmewy1iEBZFlvh2dz6HgSo+8xL1JNKoK0yG1nz3cmr8iWORAmRUnh6vhiRPHdeWfO5dhxlT+mJD/1jlfJeISj+HvUfxjwgk6BHP45FpU+27MrmWaIGx9qvvacCvafAvgT5OQ6ranKWT6CkSjQXD7uTABw4Btw9zhOrxsLX4cGWSFzcOxEKGng16UzxIR/nFQZGq+XdoppmJs5KyWdjEfX1T3vBjdNK5wPo9jkA44hYNnmeoXGQcuyp/b+KbZJyBQcBwosmEZpI8A1kBh0zPG5975KlKwnGxeslRWI14BaWWwtJcvkEZRA6dj8JI7ymFH9EL8Vr8QNAfVmJewiCeTTud/0S0x+gHRBcKBnegPclfiiN7EOl+a1X2F5cmgLO8G8QbznX4xrqJNGQ0WqhF/agZ5l4yrFERz9/ilqCXdcI+nAS5gfib1zcYv6W6YKLrl+UTBDHZNll42LOhFhkWvMOYXo9Ld6nanDan8IJhPXVz5ivffaQTq+kNGTXw9cGX9ugNQhukB9ec5M92UmIvZ1Vt0Ndpt1hu7eqQ7bvQCkBXrzb+vlOAAz/UZbHSjA6vhKwC7lsZacL3pAmejRmYRxRzx2tPPxQXTjGBh//ksxiJMiPIgDSpM7G5vKNWS6CDF1PD/wO6Yg831b2kqtv2fFrBM4/ehC3XxUGFLwCCeff/ts9Wi9NWHM3wuZ0+r3rS3xDEXfg==
+    postgres-password: AgAdk201Q+PHVOhaNnLzkKvmvTGe2vyLV6MJTvvsg4WSV4PAVGkvExgRtFXHot+mnoVIcVdUCJWhryhOYsxMvonyE59BMEBqMOVn1RoXv11m+iNjHeE7YZfndXBMyJLmPUeRKztVb3PQUKCZO0AdM/hJqRLUxNX5bLVZz3QE1t8a7sohjSS09VLFHaJ4iAebADEKsY6reUM5R4Cx5hnPyIbV2ScsScqBZR0lY6mhWMcw/yu/D48n0iv8ylUAqnP1W5ejPy8Y6dIzbb60m7CpiIi+ITcnjhFg9CRJAI3Lza/O7OdejiVzGZCehT3ehGS1F6109bwFjf/SwCileguUmXdZD+IWqcVOzNV9a0DmmQpomjIcWb+DGF6kGWPo0Hw9Xop8gb2+Ubelz0/W382pP+DfaDlJJ9W8bjhpJA1QL/I/6BdAKT115D6yV71JL0Ie9CNHvdTfGy9lq68RQINtFbsmpvt89uCphYJxk8o1OhBV7pkx6TByx30TuO0lw/zACFZrAo9OZwvcYwE0jccAFLrYrN+7LSwYd9L273uCMsVdzGFKpqciN2ikm3qwrCnhd3xwTe1FzL7hf3n093dm7swILn2V/m3dGOQaeGtCJAhzY5QNMN3PGazY+LgAEM5ZyShZ4YGxKxpPmBe1BDmG0wAtdfAHTQtsebJN+Wy4fHHv8W5XzhaPvqPIRsRdkqcf+WMiiMng6gR1rIZr
+    slack-webhook-url: AgAhYH6sdoW58rwQWtZ89f0LRmJzp/Yc1zI0YBI5IrDyHlivqGxZqYubLXUdAomNk0kwx8uqIXf4XPowLAwvlMbihNmOsg24CDEmJz3zcUVv8B25bI0HSrvLyQDCFgU8uJjYCLLvD8bQMR7wUAVwENNoUwqZyTGvfmIk71g+44f4pP7SF+pqssA18u5LrCspWHnCfhzNAlwUEKi/uS0ODsk1KRSxgAY2FVpG3vIwuTCI8hSHjcMPsREt/KiEFhg19afCA/1+f1PY55HCdnttoobUAJf5s1LRO17e7kmNeflAzzI1q/OSEiIIe339CShiDOSprvYKm4Sgk/tMWAeqOlHN6gP31FQZhUeANBndJpS8wv7rSnvKMrN2YbYfvobRal/uK0gF/ZZbeETvRYZqupNxmv5QU5Hzd1WgKZfRT5Sw5ZR3nDx7f2WQm5N2c4oE6kfwfOnqNZ6ucZAQ8J+kCUcRs0TsqYLVa7AMxv3sO1ZLIsDHKQ26H2YGA5Ssp3+zjZ0FW2ZOcXiLZSiDQsfBx1jKEBCv/HLTEQ04k3sdjnMSsc0LT3fQfW7NZZ77AmNn1Uh/875PZq3T6AUIyV1qCRA6vT2G5ClyPC7A0D7JSqjDUBa2IsV1wxDRTgpEdS0ATIC6eUVlLqcn5ZaTNmhW2OeITnbj/uph3RE0O+bMce+z6mduCVnhtgTXU8J4H0XodGoixByM0N1HxF/vuPx9F6ZvJ6VRQ74hAtlwGzDWE82bRXBIqYsf25a7mrno9k/ltCNfA4cJxh3khXuNCkIb8XnUAnPK/aLJTB4kmQPdR+llfJU=
+  template:
+    metadata:
+      creationTimestamp: null
+      name: aslan-drive-secrets
+      namespace: aslan-drive
+    type: Opaque
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: null
+  labels:
+    app: aslan-drive
+    environment: production
+    managed-by: portainer-gitops
+  name: ghcr-secret
+  namespace: aslan-drive
+spec:
+  encryptedData:
+    .dockerconfigjson: AgChicA9w7owEP5zMoj50Bj8IPYXh0Fr3ASYQWtXYFajR4zcreVrGnZhu6/rANIelFu/9EolfsmA0QBBciSC6tszrT3ywyBzaQnUJSQ4Wx/pN1GEgD99Ji/tdsNvaUWSsgQb7C0Qj3815+YSqYMA2W7Lp6TwqqbQsmBnoI8ewkbKEQomeR5kPPe5FvrPOwjAUOkPrdTReLCrqfkCSrkNuhGk06OfzJ+ulmelxv5G7reHX4yrLwJ+Gw3giDcH6TPXEMCa+3xI4EEhckzwWzqTgrjE5n7kFnx4lyH6ropaom/G7KUKmhj/as4sL87UsdvVXpuCgBlLnAOH/AbNTKloQG+ZB0ci7Lkj7n6HIgtmGjrER2Dn7zyOq2rTmEuwoO9P3Opxxq1ZJfX0ln2WzzTQqg2ekJzjE777nWl7sIviHZzp0QdppZT/4DEAez1i66FiZ2NyZLV3z9UQY8erj5RquqLl2fZKLqsznDb1NZGjh+Vh8djViOQZF36SvE0EFHzThpcxyusLKiOB62ug7DaX6Gp3WeZro7flo4UcD1e+tMqOzRQtbqJngYG3DyhGu7QV4/f51qcw/h+0xrAWsRhRedr1f+AjucsE6Mv7pbXaKBGG5BMXhqYAUyLMZE9HBJWy0BQ6NgKKiCa2kMS+Z82LTQqHwdzCT158M5i9GPoyHvMLXw2OGpiSC7xF0j7adBozAv5mDnu2xaXyVvIJdwuAV5ZC6M2NUpJC8aVlB9RPCHiF+lVGM4IPAgwlaEyOhjX32dACiJrcxZ0Rb0aMB9gZW+sA+TQWZHYAGEI3U6/Npz9SbDyQF7X6iJzpmzn/XjOi1deRNc3uT0a91fCxJ3KyI09HZAv07C9YhNLPbxoaeGFIrySf9c+DiTIs+tfd2KYWXB1D6S9d4Ae1Tz8RE7RkHNhD/xsuOPKNZulSECSje4Rx+bDzFuVUAxQJGE9OMOXlE3vHA6xLmIcnCDC6YVVs7XWz+PNXtc9ngHB7xVgEpJBEU6B5vcdX60PYaUFdUVMvRvrth2SxpyDG/BcqDHmdLDq4X5o6L9AVeOxaqunLgat/0+1abTFpYE1CJfRqYWQpKZaJi8eU5pR4dPhuvxz4l5pHMHK1uJhU78+PsgqLI3fv/tw=
+  template:
+    metadata:
+      creationTimestamp: null
+      name: ghcr-secret
+      namespace: aslan-drive
+    type: kubernetes.io/dockerconfigjson
+
