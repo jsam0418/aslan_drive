@@ -640,4 +640,3 @@ spec:
       name: ghcr-secret
       namespace: aslan-drive
     type: kubernetes.io/dockerconfigjson
-
