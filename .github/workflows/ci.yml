@@ -218,10 +218,87 @@ jobs:
           bandit-report.json
           safety-report.json
 
+  # Generate Kubernetes Deployment Manifests
+  generate-k8s-manifests:
+    runs-on: ubuntu-latest
+    needs: test-and-quality
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Kustomize
+      run: |
+        curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+        sudo mv kustomize /usr/local/bin/
+
+    - name: Verify Kustomize installation
+      run: kustomize version
+
+    - name: Generate compiled Kubernetes manifests
+      run: |
+        cd k8s
+        echo "🏗️ Building Kubernetes manifests with Kustomize..."
+        kustomize build . > compiled.yaml
+        
+        echo "📊 Generated manifest stats:"
+        wc -l compiled.yaml
+        
+        echo "📋 Resources in compiled manifest:"
+        grep -E "^kind:" compiled.yaml | sort | uniq -c || true
+        
+        echo "✅ Compiled manifest generated successfully"
+        ls -la compiled.yaml
+
+    - name: Validate generated manifests
+      run: |
+        cd k8s
+        echo "🔍 Validating YAML syntax..."
+        python3 -c "
+        import yaml
+        import sys
+        
+        try:
+            with open('compiled.yaml', 'r') as f:
+                docs = list(yaml.safe_load_all(f))
+            print(f'✅ Valid YAML with {len([d for d in docs if d])} resources')
+        except Exception as e:
+            print(f'❌ YAML validation failed: {e}')
+            sys.exit(1)
+        "
+
+    - name: Upload compiled manifests as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: kubernetes-manifests
+        path: k8s/compiled.yaml
+        retention-days: 30
+
+    - name: Commit compiled manifests back to repo
+      run: |
+        cd k8s
+        if git diff --quiet compiled.yaml 2>/dev/null; then
+          echo "📝 No changes to compiled.yaml"
+        else
+          echo "📝 Committing updated compiled.yaml"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add compiled.yaml
+          git commit -m "🤖 Update compiled Kubernetes manifests
+
+          Generated from:
+          - Commit: ${{ github.sha }}
+          - Branch: ${{ github.ref_name }}
+          - Workflow: ${{ github.workflow }}
+          
+          🚀 Ready for deployment with: kubectl apply -f k8s/compiled.yaml" || true
+          git push || echo "Nothing to push"
+        fi
+
   # Build Status Summary
   build-summary:
     runs-on: ubuntu-latest
-    needs: [test-and-quality, build-and-push, security-scan, integration-test]
+    needs: [test-and-quality, build-and-push, security-scan, integration-test, generate-k8s-manifests]
     if: always()
     steps:
     - name: Build Summary
@@ -231,10 +308,14 @@ jobs:
         echo "- Build & Push: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- Integration Tests: ${{ needs.integration-test.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- K8s Manifests: ${{ needs.generate-k8s-manifests.result }}" >> $GITHUB_STEP_SUMMARY
         
         if [[ "${{ needs.test-and-quality.result }}" == "success" && "${{ needs.build-and-push.result }}" == "success" ]]; then
           echo "✅ **Build Status: PASSED**" >> $GITHUB_STEP_SUMMARY
           echo "🚀 **Docker images pushed to GHCR**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.generate-k8s-manifests.result }}" == "success" ]]; then
+            echo "📋 **Compiled K8s manifests ready for deployment**" >> $GITHUB_STEP_SUMMARY
+          fi
         else
           echo "❌ **Build Status: FAILED**" >> $GITHUB_STEP_SUMMARY
         fi
