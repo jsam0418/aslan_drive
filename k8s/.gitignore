@@ -12,7 +12,7 @@ kubeconfig
 k3s.yaml
 
 # Auto-generated files (will be created by CI/CD)
-compiled.yaml
+# compiled.yaml
 
 # Temporary files
 *.tmp
