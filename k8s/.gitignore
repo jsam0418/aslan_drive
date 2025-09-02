@@ -1,7 +1,6 @@
 # Kubernetes Secrets (plain text)
 secrets.yaml
 secrets-ghcr.yaml
-*-secrets.yaml
 
 # Sealed Secrets Certificates  
 sealed-secrets-cert.pem

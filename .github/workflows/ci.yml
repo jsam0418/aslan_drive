@@ -219,11 +219,12 @@ jobs:
           safety-report.json
 
   # Generate Kubernetes Deployment Manifests
-  generate-k8s-manifests:
-    runs-on: ubuntu-latest
-    needs: test-and-quality
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    steps:
+generate-k8s-manifests:
+  runs-on: ubuntu-latest
+  needs: test-and-quality
+  # ✅ allow both push and PR events
+  if: github.event_name == 'push' || github.event_name == 'pull_request'
+  steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
@@ -240,31 +241,16 @@ jobs:
         cd k8s
         echo "🏗️ Building Kubernetes manifests with Kustomize..."
         kustomize build . > compiled.yaml
-        
-        echo "📊 Generated manifest stats:"
-        wc -l compiled.yaml
-        
-        echo "📋 Resources in compiled manifest:"
-        grep -E "^kind:" compiled.yaml | sort | uniq -c || true
-        
-        echo "✅ Compiled manifest generated successfully"
-        ls -la compiled.yaml
 
     - name: Validate generated manifests
       run: |
         cd k8s
-        echo "🔍 Validating YAML syntax..."
         python3 -c "
         import yaml
         import sys
-        
-        try:
-            with open('compiled.yaml', 'r') as f:
-                docs = list(yaml.safe_load_all(f))
-            print(f'✅ Valid YAML with {len([d for d in docs if d])} resources')
-        except Exception as e:
-            print(f'❌ YAML validation failed: {e}')
-            sys.exit(1)
+        with open('compiled.yaml', 'r') as f:
+            docs = list(yaml.safe_load_all(f))
+        print(f'✅ Valid YAML with {len([d for d in docs if d])} resources')
         "
 
     - name: Upload compiled manifests as artifact
@@ -274,7 +260,9 @@ jobs:
         path: k8s/compiled.yaml
         retention-days: 30
 
+    # ✅ only commit back on push (not on PR)
     - name: Commit compiled manifests back to repo
+      if: github.event_name == 'push'
       run: |
         cd k8s
         if git diff --quiet compiled.yaml 2>/dev/null; then
@@ -293,7 +281,7 @@ jobs:
           
           🚀 Ready for deployment with: kubectl apply -f k8s/compiled.yaml" || true
           git push || echo "Nothing to push"
-        fi
+        fi 
 
   # Build Status Summary
   build-summary:
