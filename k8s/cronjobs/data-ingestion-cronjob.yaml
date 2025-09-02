@@ -7,7 +7,7 @@ metadata:
     app: aslan-drive
     component: data-ingestion
 spec:
-  schedule: "0 6 * * *"  # Daily at 6:00 AM UTC
+  schedule: "0 22 * * 1-5"  # Weekdays at 6:00 PM ET (10:00 PM UTC)
   timeZone: "UTC"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3

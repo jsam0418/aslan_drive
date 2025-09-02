@@ -1,0 +1,46 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: aslan-drive-k3s
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Namespace for all resources
+namespace: aslan-drive
+
+# Resources to deploy (order matters for dependencies)
+resources:
+  - namespace.yaml
+  - sealed-secrets.yaml
+  - sealed-secrets-ghcr.yaml
+  - storage/persistent-volumes.yaml
+  - deployments/postgres-statefulset.yaml
+  - deployments/md-provider-deployment.yaml
+  - cronjobs/data-ingestion-cronjob.yaml
+  - cronjobs/health-check-cronjob.yaml
+  - cronjobs/db-backup-cronjob.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app: aslan-drive
+  environment: production
+  managed-by: portainer-gitops
+
+# Common annotations
+commonAnnotations:
+  deployment.kubernetes.io/revision: "1"
+  
+# Images to use (can be overridden per environment)
+images:
+  - name: ghcr.io/jsam0418/aslan_drive/md-provider
+    newTag: latest
+  - name: ghcr.io/jsam0418/aslan_drive/data-ingestion
+    newTag: latest  
+  - name: ghcr.io/jsam0418/aslan_drive/health-check
+    newTag: latest
+
+# Configuration for different environments
+configurations:
+  - name: production
+    # Production specific configurations can be added here
