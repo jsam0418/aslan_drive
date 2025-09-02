@@ -1,0 +1,123 @@
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: aslan-postgres
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: postgres
+spec:
+  serviceName: aslan-postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aslan-drive
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: aslan-drive
+        component: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "aslan_drive"
+        - name: POSTGRES_USER
+          value: "trader"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: aslan-drive-secrets
+              key: postgres-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trader
+            - -d
+            - aslan_drive
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trader
+            - -d
+            - aslan_drive
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+      labels:
+        app: aslan-drive
+        component: postgres
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: local-storage
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: aslan-postgres-service
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: postgres
+spec:
+  selector:
+    app: aslan-drive
+    component: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+  type: ClusterIP
+
+---
+# Internal DNS alias for postgres
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: postgres
+spec:
+  selector:
+    app: aslan-drive
+    component: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+  type: ClusterIP

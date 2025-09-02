@@ -1,0 +1,17 @@
+# Kubernetes Secrets (plain text)
+secrets.yaml
+secrets-ghcr.yaml
+*-secrets.yaml
+
+# Sealed Secrets Certificates
+sealed-secrets-cert.pem
+*.pem
+
+# Kubernetes Config Files
+kubeconfig
+*.kubeconfig
+k3s.yaml
+
+# Temporary files
+*.tmp
+*.temp

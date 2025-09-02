@@ -1,0 +1,45 @@
+version: "3.8"
+
+# Aslan Drive K3S GitOps Stack Configuration for Portainer
+# 
+# This configuration defines the complete Aslan Drive infrastructure for K3S deployment
+# using Portainer's GitOps functionality to deploy directly from the repository.
+#
+# To deploy in Portainer:
+# 1. Create new stack with Git repository method
+# 2. Set Repository URL to your GitHub repo URL
+# 3. Set Compose path to: k8s/portainer-gitops-stack.yml
+# 4. Enable automatic updates if desired
+# 5. Configure environment variables as needed
+
+services:
+  # GitOps deployment marker - this service definition tells Portainer
+  # to deploy Kubernetes manifests from the repository
+  gitops-deploy:
+    image: alpine:latest
+    command: |
+      echo "This stack uses GitOps deployment from repository k8s/ directory"
+      echo "Kubernetes manifests will be applied from:"
+      echo "  - k8s/namespace.yaml"
+      echo "  - k8s/secrets.yaml" 
+      echo "  - k8s/secrets-ghcr.yaml"
+      echo "  - k8s/storage/persistent-volumes.yaml"
+      echo "  - k8s/deployments/postgres-statefulset.yaml"
+      echo "  - k8s/deployments/md-provider-deployment.yaml"
+      echo "  - k8s/cronjobs/data-ingestion-cronjob.yaml"
+      echo "  - k8s/cronjobs/health-check-cronjob.yaml"
+      echo "  - k8s/cronjobs/db-backup-cronjob.yaml"
+    deploy:
+      replicas: 0
+    labels:
+      - "com.aslan-drive.component=gitops-marker"
+
+# Note: In actual GitOps deployment, Portainer will:
+# 1. Clone the repository 
+# 2. Apply all Kubernetes manifests from k8s/ directory
+# 3. Monitor for changes and redeploy automatically
+# 
+# Ensure your secrets are properly configured before deployment:
+# - Replace placeholder values in secrets.yaml with base64 encoded actual values
+# - Update hostnames in persistent-volumes.yaml to match your K3S nodes
+# - Configure GHCR credentials in secrets-ghcr.yaml for image pulls

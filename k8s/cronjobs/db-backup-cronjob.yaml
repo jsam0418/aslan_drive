@@ -1,0 +1,121 @@
+---
+# Database Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aslan-db-backup
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: db-backup
+spec:
+  schedule: "0 4 * * 6"  # Saturdays at midnight ET (4:00 AM UTC)
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 4  # Keep 4 weeks of successful backups
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: aslan-drive
+            component: db-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: db-backup
+            image: postgres:15
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="/backup/aslan_drive_backup_${BACKUP_DATE}.sql"
+              
+              echo "Starting database backup to $BACKUP_FILE"
+              
+              # Create backup with pg_dump
+              pg_dump \
+                --host=$POSTGRES_HOST \
+                --port=5432 \
+                --username=$POSTGRES_USER \
+                --dbname=$POSTGRES_DB \
+                --verbose \
+                --clean \
+                --create \
+                --if-exists \
+                --format=custom \
+                --file="${BACKUP_FILE}.custom"
+              
+              # Also create a plain SQL backup for easy restoration
+              pg_dump \
+                --host=$POSTGRES_HOST \
+                --port=5432 \
+                --username=$POSTGRES_USER \
+                --dbname=$POSTGRES_DB \
+                --verbose \
+                --clean \
+                --create \
+                --if-exists \
+                --file="${BACKUP_FILE}"
+              
+              # Compress the plain SQL backup
+              gzip "${BACKUP_FILE}"
+              
+              echo "Backup completed successfully"
+              
+              # Clean up old backups (keep last 8 weeks)
+              find /backup -name "aslan_drive_backup_*.sql.gz" -mtime +56 -delete || true
+              find /backup -name "aslan_drive_backup_*.custom" -mtime +56 -delete || true
+              
+              echo "Old backups cleaned up"
+              ls -la /backup/
+            env:
+            - name: POSTGRES_HOST
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "aslan_drive"
+            - name: POSTGRES_USER
+              value: "trader"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aslan-drive-secrets
+                  key: postgres-password
+            - name: TZ
+              value: "America/New_York"
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: db-backup-pvc
+
+---
+# Persistent Volume Claim for DB Backups
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-backup-pvc
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: db-backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: backup-storage
+  resources:
+    requests:
+      storage: 20Gi
