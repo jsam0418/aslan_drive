@@ -9,7 +9,7 @@ on:
 
 # Add this permissions block - CRITICAL!
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
 
