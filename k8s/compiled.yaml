@@ -50,7 +50,8 @@ metadata:
   namespace: aslan-drive
 spec:
   ports:
-  - port: 8000
+  - nodePort: 30800
+    port: 8000
     protocol: TCP
     targetPort: 8000
   selector:
@@ -58,7 +59,7 @@ spec:
     component: md-provider
     environment: production
     managed-by: portainer-gitops
-  type: ClusterIP
+  type: NodePort
 ---
 apiVersion: v1
 kind: Service
@@ -74,7 +75,8 @@ metadata:
   namespace: aslan-drive
 spec:
   ports:
-  - port: 5432
+  - nodePort: 30432
+    port: 5432
     protocol: TCP
     targetPort: 5432
   selector:
@@ -82,7 +84,7 @@ spec:
     component: postgres
     environment: production
     managed-by: portainer-gitops
-  type: ClusterIP
+  type: NodePort
 ---
 apiVersion: v1
 kind: Service
