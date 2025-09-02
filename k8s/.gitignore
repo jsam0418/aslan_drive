@@ -3,7 +3,7 @@ secrets.yaml
 secrets-ghcr.yaml
 *-secrets.yaml
 
-# Sealed Secrets Certificates
+# Sealed Secrets Certificates  
 sealed-secrets-cert.pem
 *.pem
 
@@ -11,6 +11,9 @@ sealed-secrets-cert.pem
 kubeconfig
 *.kubeconfig
 k3s.yaml
+
+# Auto-generated files (will be created by CI/CD)
+compiled.yaml
 
 # Temporary files
 *.tmp
