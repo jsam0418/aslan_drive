@@ -26,5 +26,5 @@ types-pytz==2023.3.0.1
 
 # Utilities
 python-dotenv==1.0.0
-click==8.1.7
+click==8.1.8
 pytz==2023.3
