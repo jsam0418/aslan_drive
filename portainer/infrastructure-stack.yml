@@ -16,8 +16,6 @@ services:
       - "${PGADMIN_PORT:-8080}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-    networks:
-      - aslan_network
     restart: unless-stopped
     deploy:
       resources:
