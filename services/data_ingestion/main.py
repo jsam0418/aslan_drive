@@ -9,6 +9,7 @@ import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
 import pytz
 
 # Add project root to path
@@ -28,41 +29,45 @@ logger = logging.getLogger(__name__)
 def get_target_trade_date() -> date:
     """
     Determine the correct trade date based on current time and market hours.
-    
+
     Market closes at 4:00 PM Central Time (5:00 PM ET).
     - If before 4:00 PM CT and it's a weekday, load previous trading day
     - If after 4:00 PM CT and it's a weekday, load current day
     - If weekend, load Friday's data
     """
     # Get current time in Central Time
-    central_tz = pytz.timezone('US/Central')
+    central_tz = pytz.timezone("US/Central")
     now_ct = datetime.now(central_tz)
     current_date = now_ct.date()
-    
+
     logger.info(f"Current time (Central): {now_ct}")
-    
+
     # If it's weekend, return Friday
     if current_date.weekday() >= 5:  # Saturday = 5, Sunday = 6
         days_back = current_date.weekday() - 4  # Go back to Friday
         target_date = current_date - timedelta(days=days_back)
         logger.info(f"Weekend detected, targeting Friday: {target_date}")
         return target_date
-    
+
     # If it's a weekday, check if market has closed (4:00 PM CT)
     market_close_hour = 16  # 4:00 PM
-    
+
     if now_ct.hour >= market_close_hour:
         # Market has closed, use today's date
         target_date = current_date
-        logger.info(f"After market close ({market_close_hour}:00 CT), targeting today: {target_date}")
+        logger.info(
+            f"After market close ({market_close_hour}:00 CT), targeting today: {target_date}"
+        )
     else:
         # Market hasn't closed yet, use previous trading day
         if current_date.weekday() == 0:  # Monday
             target_date = current_date - timedelta(days=3)  # Friday
         else:
             target_date = current_date - timedelta(days=1)  # Previous day
-        logger.info(f"Before market close ({market_close_hour}:00 CT), targeting previous day: {target_date}")
-    
+        logger.info(
+            f"Before market close ({market_close_hour}:00 CT), targeting previous day: {target_date}"
+        )
+
     return target_date
 
 
@@ -164,7 +169,9 @@ def run_continuous_ingestion(
 
             # Check if we already have data for the target date
             if db_manager.check_data_exists_for_date(target_date.isoformat()):
-                logger.info(f"Data for {target_date} already exists, skipping generation")
+                logger.info(
+                    f"Data for {target_date} already exists, skipping generation"
+                )
             else:
                 logger.info(f"Generating data for {target_date}")
 
@@ -175,7 +182,9 @@ def run_continuous_ingestion(
 
                 if target_data:
                     db_manager.insert_daily_ohlcv_data(target_data)
-                    logger.info(f"Inserted {len(target_data)} records for {target_date}")
+                    logger.info(
+                        f"Inserted {len(target_data)} records for {target_date}"
+                    )
                 else:
                     logger.info(f"No data generated for {target_date} (weekend?)")
 

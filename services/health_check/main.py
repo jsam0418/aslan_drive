@@ -65,7 +65,9 @@ async def perform_health_check():
             # Skip weekend days for yesterday check too
             if yesterday.weekday() >= 5:
                 yesterday = yesterday - timedelta(days=(yesterday.weekday() - 4))
-            logger.info(f"No data for {check_date}, checking {yesterday} instead (early day fallback)")
+            logger.info(
+                f"No data for {check_date}, checking {yesterday} instead (early day fallback)"
+            )
             data_exists = db_manager.check_data_exists_for_date(yesterday.isoformat())
             if data_exists:
                 check_date = yesterday
