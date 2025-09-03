@@ -54,8 +54,12 @@ lint-fix: ## Fix import order
 	python3 -m isort services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
 
 typecheck: ## Run type checking
-	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
-	python3 -m mypy services/ tools/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1)
+	@if [ -d "venv" ]; then \
+		./venv/bin/python -m mypy services/ tools/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1); \
+	else \
+		which python3 > /dev/null || (echo "Python 3 not found" && exit 1); \
+		python3 -m mypy services/ tools/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1); \
+	fi
 
 docker-build: build ## Build Docker images
 	docker-compose build

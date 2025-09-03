@@ -7,8 +7,10 @@ import logging
 import os
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+
+import pytz
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -22,6 +24,51 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def get_target_trade_date() -> date:
+    """
+    Determine the correct trade date based on current time and market hours.
+
+    Market closes at 4:00 PM Central Time (5:00 PM ET).
+    - If before 4:00 PM CT and it's a weekday, load previous trading day
+    - If after 4:00 PM CT and it's a weekday, load current day
+    - If weekend, load Friday's data
+    """
+    # Get current time in Central Time
+    central_tz = pytz.timezone("US/Central")
+    now_ct = datetime.now(central_tz)
+    current_date = now_ct.date()
+
+    logger.info(f"Current time (Central): {now_ct}")
+
+    # If it's weekend, return Friday
+    if current_date.weekday() >= 5:  # Saturday = 5, Sunday = 6
+        days_back = current_date.weekday() - 4  # Go back to Friday
+        target_date = current_date - timedelta(days=days_back)
+        logger.info(f"Weekend detected, targeting Friday: {target_date}")
+        return target_date
+
+    # If it's a weekday, check if market has closed (4:00 PM CT)
+    market_close_hour = 16  # 4:00 PM
+
+    if now_ct.hour >= market_close_hour:
+        # Market has closed, use today's date
+        target_date = current_date
+        logger.info(
+            f"After market close ({market_close_hour}:00 CT), targeting today: {target_date}"
+        )
+    else:
+        # Market hasn't closed yet, use previous trading day
+        if current_date.weekday() == 0:  # Monday
+            target_date = current_date - timedelta(days=3)  # Friday
+        else:
+            target_date = current_date - timedelta(days=1)  # Previous day
+        logger.info(
+            f"Before market close ({market_close_hour}:00 CT), targeting previous day: {target_date}"
+        )
+
+    return target_date
 
 
 def load_migration_sql() -> str:
@@ -76,8 +123,8 @@ def main():
 
 def run_onetime_ingestion(db_manager: DatabaseManager, generator: MockOHLCVGenerator):
     """Run a one-time data ingestion for historical data."""
-    # Generate data for the last year up to yesterday
-    end_date = date.today() - timedelta(days=1)
+    # Use the correct trade date based on market hours
+    end_date = get_target_trade_date()
     start_date = end_date - timedelta(days=365)
 
     logger.info(f"Generating historical data from {start_date} to {end_date}")
@@ -117,25 +164,29 @@ def run_continuous_ingestion(
 
     while True:
         try:
-            # Generate today's data
-            today = date.today()
+            # Get the correct trade date
+            target_date = get_target_trade_date()
 
-            # Check if we already have today's data
-            if db_manager.check_data_exists_for_date(today.isoformat()):
-                logger.info(f"Data for {today} already exists, skipping generation")
+            # Check if we already have data for the target date
+            if db_manager.check_data_exists_for_date(target_date.isoformat()):
+                logger.info(
+                    f"Data for {target_date} already exists, skipping generation"
+                )
             else:
-                logger.info(f"Generating data for {today}")
+                logger.info(f"Generating data for {target_date}")
 
-                # Generate data for today
-                todays_data = generator.generate_historical_data(
-                    start_date=today, end_date=today
+                # Generate data for the target date
+                target_data = generator.generate_historical_data(
+                    start_date=target_date, end_date=target_date
                 )
 
-                if todays_data:
-                    db_manager.insert_daily_ohlcv_data(todays_data)
-                    logger.info(f"Inserted {len(todays_data)} records for {today}")
+                if target_data:
+                    db_manager.insert_daily_ohlcv_data(target_data)
+                    logger.info(
+                        f"Inserted {len(target_data)} records for {target_date}"
+                    )
                 else:
-                    logger.info(f"No data generated for {today} (weekend?)")
+                    logger.info(f"No data generated for {target_date} (weekend?)")
 
             logger.info(f"Sleeping for {sleep_interval} seconds...")
             time.sleep(sleep_interval)

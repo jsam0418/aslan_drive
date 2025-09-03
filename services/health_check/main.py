@@ -7,7 +7,7 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 # Add project root to path
@@ -37,7 +37,7 @@ async def perform_health_check():
     # If it's weekend, check for Friday's data instead
     if check_date.weekday() >= 5:  # Saturday = 5, Sunday = 6
         days_back = check_date.weekday() - 4  # Go back to Friday
-        check_date = check_date.replace(day=check_date.day - days_back)
+        check_date = check_date - timedelta(days=days_back)
         logger.info(f"Weekend detected, checking for {check_date} data instead")
 
     try:
@@ -58,6 +58,19 @@ async def perform_health_check():
         # Check if data exists for the target date
         logger.info(f"Checking for data on {check_date}")
         data_exists = db_manager.check_data_exists_for_date(check_date.isoformat())
+
+        # If no data for today and it's early in the day, check yesterday's data
+        if not data_exists and datetime.now().hour < 12:
+            yesterday = check_date - timedelta(days=1)
+            # Skip weekend days for yesterday check too
+            if yesterday.weekday() >= 5:
+                yesterday = yesterday - timedelta(days=(yesterday.weekday() - 4))
+            logger.info(
+                f"No data for {check_date}, checking {yesterday} instead (early day fallback)"
+            )
+            data_exists = db_manager.check_data_exists_for_date(yesterday.isoformat())
+            if data_exists:
+                check_date = yesterday
 
         if not data_exists:
             await slack_notifier.send_health_check_failure(
