@@ -5,14 +5,10 @@
 # Description: PostgreSQL database, MD Provider API, and pgAdmin frontend
 
 version: '3.8'
-
 services:
   pgadmin:
     image: dpage/pgadmin4
     container_name: aslan_pgadmin
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-supersecret}
@@ -36,13 +32,6 @@ services:
       - "aslan.tier=frontend"
 
 volumes:
-  postgres_data:
-    name: aslan_postgres_data
   pgadmin_data:
     name: aslan_pgadmin_data
-
-networks:
-  aslan_network:
-    name: aslan_network
-    driver: bridge
 
