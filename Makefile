@@ -14,8 +14,8 @@ help: ## Show this help message
 info: ## Show project information
 	@echo "Aslan Drive Trading Infrastructure v0.1.0"
 	@echo "Python: $(shell which python3)"
-	@echo "Schema file: schemas/market_data.json"
-	@echo "Generated dir: generated/"
+	@echo "Models directory: models/"
+	@echo "Alembic migrations: alembic/versions/"
 
 build: ## Build the project (validate syntax)
 	python3 -m py_compile models/base.py
@@ -39,27 +39,27 @@ clean: ## Clean generated files
 
 format: ## Format code with black and isort
 	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
-	python3 -m isort services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
-	python3 -m black services/ tools/ tests/ || (echo "Run: pip install black" && exit 1)
+	python3 -m isort services/ models/ tests/ || (echo "Run: pip install isort" && exit 1)
+	python3 -m black services/ models/ tests/ || (echo "Run: pip install black" && exit 1)
 
 format-check: ## Check code formatting
 	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
-	python3 -m black --check --diff services/ tools/ tests/ || (echo "Run: pip install black" && exit 1)
+	python3 -m black --check --diff services/ models/ tests/ || (echo "Run: pip install black" && exit 1)
 
 lint: ## Check code style and imports
 	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
-	python3 -m isort --check-only --diff services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
+	python3 -m isort --check-only --diff services/ models/ tests/ || (echo "Run: pip install isort" && exit 1)
 
 lint-fix: ## Fix import order
 	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
-	python3 -m isort services/ tools/ tests/ || (echo "Run: pip install isort" && exit 1)
+	python3 -m isort services/ models/ tests/ || (echo "Run: pip install isort" && exit 1)
 
 typecheck: ## Run type checking
 	@if [ -d "venv" ]; then \
-		./venv/bin/python -m mypy services/ tools/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1); \
+		./venv/bin/python -m mypy services/ models/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1); \
 	else \
 		which python3 > /dev/null || (echo "Python 3 not found" && exit 1); \
-		python3 -m mypy services/ tools/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1); \
+		python3 -m mypy services/ models/ --ignore-missing-imports || (echo "Run: pip install mypy" && exit 1); \
 	fi
 
 docker-build: build ## Build Docker images
