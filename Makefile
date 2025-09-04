@@ -17,12 +17,13 @@ info: ## Show project information
 	@echo "Schema file: schemas/market_data.json"
 	@echo "Generated dir: generated/"
 
-build: ## Build the project (generate schema, validate syntax)
-	python3 tools/schema_generator.py
+build: ## Build the project (validate syntax)
+	python3 -m py_compile models/base.py
+	python3 -m py_compile models/market_data.py
 	python3 -m py_compile services/data_ingestion/main.py
 	python3 -m py_compile services/md_provider/main.py
 	python3 -m py_compile services/health_check/main.py
-	python3 -m py_compile tools/schema_generator.py
+	python3 -m py_compile services/db_migration/main.py
 
 test: build ## Run all tests
 	python3 -m pytest tests/ -v

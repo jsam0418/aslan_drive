@@ -3,12 +3,21 @@ Database connection and operations for data ingestion service
 """
 import logging
 import os
+import sys
 from contextlib import contextmanager
-from typing import Any, Generator, Optional
+from pathlib import Path
+from typing import Any, Generator, List, Optional
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
+
+# Add project root to path for models import
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from models import DailyOHLCV, Symbol
 
 logger = logging.getLogger(__name__)
 
@@ -88,53 +97,38 @@ class DatabaseManager:
             logger.error(f"Migration failed: {e}")
             return False
 
-    def insert_daily_ohlcv_data(self, data_records: list) -> int:
-        """Insert daily OHLCV data records, return number of inserted records."""
+    def insert_daily_ohlcv_data(self, data_records: List[dict]) -> int:
+        """Insert daily OHLCV data records using SQLAlchemy ORM."""
         if not data_records:
             return 0
 
         inserted_count = 0
 
         try:
-            with self.get_session() as session:  # type: Session
+            with self.get_session() as session:
                 for record in data_records:
-                    # Convert Decimal to float for SQLite compatibility
-                    converted_record = record.copy()
+                    # Create DailyOHLCV instance
+                    ohlcv_record = DailyOHLCV(**record)
+
                     if self._is_sqlite():
-                        from decimal import Decimal
-
-                        for key, value in converted_record.items():
-                            if isinstance(value, Decimal):
-                                converted_record[key] = float(value)
-
-                        # SQLite uses INSERT OR REPLACE
-                        insert_sql = text(
-                            """
-                            INSERT OR REPLACE INTO daily_ohlcv 
-                            (symbol, date, open, high, low, close, volume, created_at)
-                            VALUES 
-                            (:symbol, :date, :open, :high, :low, :close, :volume, :created_at)
-                        """
-                        )
+                        # For SQLite, use merge (upsert)
+                        session.merge(ohlcv_record)
                     else:
-                        # PostgreSQL uses ON CONFLICT
-                        insert_sql = text(
-                            """
-                            INSERT INTO daily_ohlcv 
-                            (symbol, date, open, high, low, close, volume, created_at)
-                            VALUES 
-                            (:symbol, :date, :open, :high, :low, :close, :volume, :created_at)
-                            ON CONFLICT (symbol, date) DO UPDATE SET
-                                open = EXCLUDED.open,
-                                high = EXCLUDED.high,
-                                low = EXCLUDED.low,
-                                close = EXCLUDED.close,
-                                volume = EXCLUDED.volume,
-                                created_at = EXCLUDED.created_at
-                        """
+                        # For PostgreSQL, use upsert with ON CONFLICT
+                        stmt = pg_insert(DailyOHLCV).values(**record)
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=["symbol", "date"],
+                            set_={
+                                "open": stmt.excluded.open,
+                                "high": stmt.excluded.high,
+                                "low": stmt.excluded.low,
+                                "close": stmt.excluded.close,
+                                "volume": stmt.excluded.volume,
+                                "created_at": stmt.excluded.created_at,
+                            },
                         )
+                        session.execute(stmt)
 
-                    session.execute(insert_sql, converted_record)
                     inserted_count += 1
 
                 logger.info(f"Inserted/updated {inserted_count} OHLCV records")
@@ -145,45 +139,38 @@ class DatabaseManager:
 
         return inserted_count
 
-    def insert_symbols_metadata(self, metadata_records: list) -> int:
-        """Insert symbols metadata, return number of inserted records."""
+    def insert_symbols_metadata(self, metadata_records: List[dict]) -> int:
+        """Insert symbols metadata using SQLAlchemy ORM."""
         if not metadata_records:
             return 0
 
         inserted_count = 0
 
         try:
-            with self.get_session() as session:  # type: Session
+            with self.get_session() as session:
                 for record in metadata_records:
-                    if self._is_sqlite():
-                        # SQLite uses INSERT OR REPLACE
-                        insert_sql = text(
-                            """
-                            INSERT OR REPLACE INTO symbols 
-                            (symbol, name, asset_class, exchange, currency, active, created_at, updated_at)
-                            VALUES 
-                            (:symbol, :name, :asset_class, :exchange, :currency, :active, :created_at, :updated_at)
-                        """
-                        )
-                    else:
-                        # PostgreSQL uses ON CONFLICT
-                        insert_sql = text(
-                            """
-                            INSERT INTO symbols 
-                            (symbol, name, asset_class, exchange, currency, active, created_at, updated_at)
-                            VALUES 
-                            (:symbol, :name, :asset_class, :exchange, :currency, :active, :created_at, :updated_at)
-                            ON CONFLICT (symbol) DO UPDATE SET
-                                name = EXCLUDED.name,
-                                asset_class = EXCLUDED.asset_class,
-                                exchange = EXCLUDED.exchange,
-                                currency = EXCLUDED.currency,
-                                active = EXCLUDED.active,
-                                updated_at = EXCLUDED.updated_at
-                        """
-                        )
+                    # Create Symbol instance
+                    symbol_record = Symbol(**record)
 
-                    session.execute(insert_sql, record)
+                    if self._is_sqlite():
+                        # For SQLite, use merge (upsert)
+                        session.merge(symbol_record)
+                    else:
+                        # For PostgreSQL, use upsert with ON CONFLICT
+                        stmt = pg_insert(Symbol).values(**record)
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=["symbol"],
+                            set_={
+                                "name": stmt.excluded.name,
+                                "asset_class": stmt.excluded.asset_class,
+                                "exchange": stmt.excluded.exchange,
+                                "currency": stmt.excluded.currency,
+                                "active": stmt.excluded.active,
+                                "updated_at": stmt.excluded.updated_at,
+                            },
+                        )
+                        session.execute(stmt)
+
                     inserted_count += 1
 
                 logger.info(
@@ -197,17 +184,17 @@ class DatabaseManager:
         return inserted_count
 
     def get_latest_data_date(self, symbol: Optional[str] = None) -> Optional[str]:
-        """Get the latest date for which we have data."""
+        """Get the latest date for which we have data using SQLAlchemy ORM."""
         try:
-            with self.get_session() as session:  # type: Session
+            with self.get_session() as session:
+                from sqlalchemy import func
+
+                query = session.query(func.max(DailyOHLCV.date))
+
                 if symbol:
-                    query = text(
-                        "SELECT MAX(date) FROM daily_ohlcv WHERE symbol = :symbol"
-                    )
-                    result = session.execute(query, {"symbol": symbol}).scalar()
-                else:
-                    query = text("SELECT MAX(date) FROM daily_ohlcv")
-                    result = session.execute(query).scalar()
+                    query = query.filter(DailyOHLCV.symbol == symbol)
+
+                result = query.scalar()
 
                 if result:
                     # Handle different database types
@@ -224,20 +211,18 @@ class DatabaseManager:
     def check_data_exists_for_date(
         self, check_date: str, symbol: Optional[str] = None
     ) -> bool:
-        """Check if data exists for a specific date."""
+        """Check if data exists for a specific date using SQLAlchemy ORM."""
         try:
-            with self.get_session() as session:  # type: Session
-                if symbol:
-                    query = text(
-                        "SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date AND symbol = :symbol"
-                    )
-                    count = session.execute(
-                        query, {"date": check_date, "symbol": symbol}
-                    ).scalar()
-                else:
-                    query = text("SELECT COUNT(*) FROM daily_ohlcv WHERE date = :date")
-                    count = session.execute(query, {"date": check_date}).scalar()
+            with self.get_session() as session:
+                from sqlalchemy import func
 
+                query = session.query(func.count(DailyOHLCV.symbol))
+                query = query.filter(DailyOHLCV.date == check_date)
+
+                if symbol:
+                    query = query.filter(DailyOHLCV.symbol == symbol)
+
+                count = query.scalar()
                 return bool(count and count > 0)
 
         except SQLAlchemyError as e:
