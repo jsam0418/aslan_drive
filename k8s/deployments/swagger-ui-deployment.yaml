@@ -1,0 +1,104 @@
+---
+# Swagger UI Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aslan-swagger-ui
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: swagger-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aslan-drive
+      component: swagger-ui
+  template:
+    metadata:
+      labels:
+        app: aslan-drive
+        component: swagger-ui
+    spec:
+      containers:
+      - name: swagger-ui
+        image: swaggerapi/swagger-ui:v5.10.5
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SWAGGER_JSON_URL
+          value: "http://aslan-postgrest-service:3000/"
+        - name: API_URL
+          value: "http://aslan-postgrest-service:3000/"
+        - name: BASE_URL
+          value: "/"
+        - name: DEEP_LINKING
+          value: "true"
+        - name: DISPLAY_OPERATION_ID
+          value: "false"
+        - name: DEFAULT_MODELS_EXPAND_DEPTH
+          value: "1"
+        - name: DEFAULT_MODEL_EXPAND_DEPTH
+          value: "1"
+        - name: DEFAULT_MODEL_RENDERING
+          value: "example"
+        - name: DISPLAY_REQUEST_DURATION
+          value: "false"
+        - name: DOC_EXPANSION
+          value: "list"
+        - name: FILTER
+          value: "false"
+        - name: MAX_DISPLAYED_TAGS
+          value: "-1"
+        - name: OPERATIONS_SORTER
+          value: "alpha"
+        - name: SHOW_EXTENSIONS
+          value: "false"
+        - name: SHOW_COMMON_EXTENSIONS
+          value: "false"
+        - name: TAG_SORTER
+          value: "alpha"
+        - name: VALIDATOR_URL
+          value: "https://validator.swagger.io/validator"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+# Swagger UI Service with NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: aslan-swagger-ui-service
+  namespace: aslan-drive
+  labels:
+    app: aslan-drive
+    component: swagger-ui
+spec:
+  type: NodePort
+  selector:
+    app: aslan-drive
+    component: swagger-ui
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30080
+    protocol: TCP
+    name: http
