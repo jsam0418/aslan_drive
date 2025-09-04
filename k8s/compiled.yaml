@@ -93,6 +93,32 @@ metadata:
     deployment.kubernetes.io/revision: "1"
   labels:
     app: aslan-drive
+    component: postgrest
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-postgrest-service
+  namespace: aslan-drive
+spec:
+  ports:
+  - name: http
+    nodePort: 30300
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app: aslan-drive
+    component: postgrest
+    environment: production
+    managed-by: portainer-gitops
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
     component: postgres
     environment: production
     managed-by: portainer-gitops
@@ -255,6 +281,80 @@ spec:
             memory: 128Mi
       imagePullSecrets:
       - name: ghcr-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: aslan-drive
+    component: postgrest
+    environment: production
+    managed-by: portainer-gitops
+  name: aslan-postgrest
+  namespace: aslan-drive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aslan-drive
+      component: postgrest
+      environment: production
+      managed-by: portainer-gitops
+  template:
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      labels:
+        app: aslan-drive
+        component: postgrest
+        environment: production
+        managed-by: portainer-gitops
+    spec:
+      containers:
+      - env:
+        - name: PGRST_DB_URI
+          valueFrom:
+            secretKeyRef:
+              key: database-url
+              name: aslan-drive-secrets
+        - name: PGRST_DB_SCHEMAS
+          value: public
+        - name: PGRST_DB_ANON_ROLE
+          value: trader
+        - name: PGRST_SERVER_PORT
+          value: "3000"
+        - name: PGRST_SERVER_HOST
+          value: '*'
+        - name: PGRST_OPENAPI_SERVER_PROXY_URI
+          value: http://localhost:30300
+        - name: PGRST_LOG_LEVEL
+          value: info
+        image: postgrest/postgrest:v12.2.3
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        name: postgrest
+        ports:
+        - containerPort: 3000
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
 ---
 apiVersion: apps/v1
 kind: StatefulSet
