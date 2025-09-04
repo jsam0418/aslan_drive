@@ -12,6 +12,7 @@ resources:
   - storage/persistent-volumes.yaml
   - deployments/postgres-statefulset.yaml
   - deployments/md-provider-deployment.yaml
+  - deployments/postgrest-deployment.yaml
   - cronjobs/data-ingestion-cronjob.yaml
   - cronjobs/health-check-cronjob.yaml
   - cronjobs/db-backup-cronjob.yaml
