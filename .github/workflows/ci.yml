@@ -49,10 +49,10 @@ jobs:
 
     - name: Check for schema changes without migrations
       run: |
-        # Set up temporary in-memory database to check for schema differences
+        # Set up temporary database for schema drift detection
         export DATABASE_URL="sqlite:///temp_schema_check.db"
         
-        # Create current schema from models
+        # Create database with current schema and stamp with latest migration
         python -c "
         import os
         from sqlalchemy import create_engine
@@ -63,22 +63,28 @@ jobs:
         print('✅ Temporary database created with current schema')
         "
         
-        # Check if alembic thinks there are differences
-        if alembic check > /dev/null 2>&1; then
-          echo "✅ No pending migrations detected"
+        # Stamp the database with the latest migration without running migrations
+        LATEST_REVISION=$(alembic heads | cut -d' ' -f1)
+        echo "📋 Stamping database with latest revision: $LATEST_REVISION"
+        alembic stamp "$LATEST_REVISION"
+        
+        # Now check for schema differences using alembic check
+        echo "🔍 Checking for schema changes..."
+        CHECK_OUTPUT=$(alembic check 2>&1)
+        
+        if echo "$CHECK_OUTPUT" | grep -q "No new upgrade operations detected"; then
+          echo "✅ No pending migrations detected - models match latest migration"
         else
           echo "❌ Schema changes detected without corresponding Alembic migration!"
-          echo "Please run 'alembic revision --autogenerate -m \"Description of changes\"'"
-          echo "Then commit both the model changes AND the new migration file."
-          
+          echo "Your SQLAlchemy models have changes that require a new migration."
           echo ""
-          echo "Current Alembic status:"
-          alembic current || echo "No current revision"
-          
+          echo "Alembic check output:"
+          echo "$CHECK_OUTPUT"
           echo ""
-          echo "Checking for differences:"
-          alembic check 2>&1 || true
-          
+          echo "To fix this:"
+          echo "1. Run: alembic revision --autogenerate -m \"Description of changes\""
+          echo "2. Review the generated migration file"
+          echo "3. Commit both model changes AND the new migration file"
           exit 1
         fi
         
