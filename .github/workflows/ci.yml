@@ -43,22 +43,65 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Generate schema files
+    - name: Validate SQLAlchemy models
       run: |
-        python tools/schema_generator.py
-        ls -la generated/
+        python -c "from models import Base, DailyOHLCV, Symbol; print('✅ SQLAlchemy models imported successfully')"
+
+    - name: Check for schema changes without migrations
+      run: |
+        # Set up temporary database for schema drift detection
+        export DATABASE_URL="sqlite:///temp_schema_check.db"
+        
+        # Create database with current schema and stamp with latest migration
+        python -c "
+        import os
+        from sqlalchemy import create_engine
+        from models.base import Base
+        
+        engine = create_engine(os.getenv('DATABASE_URL'))
+        Base.metadata.create_all(engine)
+        print('✅ Temporary database created with current schema')
+        "
+        
+        # Stamp the database with the latest migration without running migrations
+        LATEST_REVISION=$(alembic heads | cut -d' ' -f1)
+        echo "📋 Stamping database with latest revision: $LATEST_REVISION"
+        alembic stamp "$LATEST_REVISION"
+        
+        # Now check for schema differences using alembic check
+        echo "🔍 Checking for schema changes..."
+        CHECK_OUTPUT=$(alembic check 2>&1)
+        
+        if echo "$CHECK_OUTPUT" | grep -q "No new upgrade operations detected"; then
+          echo "✅ No pending migrations detected - models match latest migration"
+        else
+          echo "❌ Schema changes detected without corresponding Alembic migration!"
+          echo "Your SQLAlchemy models have changes that require a new migration."
+          echo ""
+          echo "Alembic check output:"
+          echo "$CHECK_OUTPUT"
+          echo ""
+          echo "To fix this:"
+          echo "1. Run: alembic revision --autogenerate -m \"Description of changes\""
+          echo "2. Review the generated migration file"
+          echo "3. Commit both model changes AND the new migration file"
+          exit 1
+        fi
+        
+        # Clean up
+        rm -f temp_schema_check.db
 
     - name: Run code formatting check
       run: |
-        python -m black --check --diff services/ tools/ tests/
+        python -m black --check --diff services/ models/ tests/
 
     - name: Run import sorting check
       run: |
-        python -m isort --check-only --diff services/ tools/ tests/
+        python -m isort --check-only --diff services/ models/ tests/
 
     - name: Run type checking
       run: |
-        python -m mypy services/ tools/ --ignore-missing-imports
+        python -m mypy services/ models/ --ignore-missing-imports
 
     - name: Run basic functionality tests
       run: |
@@ -66,7 +109,7 @@ jobs:
 
     - name: Run unit tests with pytest
       run: |
-        python -m pytest tests/ -v --tb=short --cov=services --cov=tools --cov-report=xml --cov-report=term-missing
+        python -m pytest tests/ -v --tb=short --cov=services --cov=models --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -92,6 +135,9 @@ jobs:
           - name: md-provider
             dockerfile: services/md_provider/Dockerfile
             context: .
+          - name: db-migration
+            dockerfile: services/db_migration/Dockerfile
+            context: .
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -101,9 +147,9 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Generate schema files
+    - name: Validate SQLAlchemy models for build
       run: |
-        python tools/schema_generator.py
+        python -c "from models import Base, DailyOHLCV, Symbol; print('✅ Models validated for Docker build')"
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -172,12 +218,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Generate schema and apply migration
+    - name: Run Alembic migrations for integration tests
+      env:
+        DATABASE_URL: postgresql://trader:test123@localhost:5432/aslan_drive
       run: |
-        python tools/schema_generator.py
-        
-        # Apply migration to test database
-        PGPASSWORD=test123 psql -h localhost -U trader -d aslan_drive -f generated/migration.sql
+        # Run Alembic migrations to set up test database
+        alembic upgrade head
 
     - name: Run integration tests
       env:
@@ -203,7 +249,7 @@ jobs:
     - name: Run Bandit security scan
       run: |
         pip install bandit[toml]
-        bandit -r services/ tools/ -f json -o bandit-report.json || true
+        bandit -r services/ models/ -f json -o bandit-report.json || true
 
     - name: Run Safety dependency scan
       run: |

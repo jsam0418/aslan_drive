@@ -14,7 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY services/data_ingestion/ ./services/data_ingestion/
 COPY services/__init__.py ./services/
-COPY generated/ ./generated/
+COPY models/ ./models/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
 # Set environment variables
 ENV PYTHONPATH=/app

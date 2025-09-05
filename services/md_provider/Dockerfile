@@ -16,7 +16,7 @@ COPY services/md_provider/ ./services/md_provider/
 COPY services/data_ingestion/database.py ./services/data_ingestion/database.py
 COPY services/__init__.py ./services/
 COPY services/data_ingestion/__init__.py ./services/data_ingestion/
-COPY generated/ ./generated/
+COPY models/ ./models/
 
 # Set environment variables
 ENV PYTHONPATH=/app

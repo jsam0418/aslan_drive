@@ -20,8 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Generate models from schema
-RUN python3 tools/schema_generator.py
+# Validate SQLAlchemy models
+RUN python3 -c "from models import Base, DailyOHLCV, Symbol; print('✅ SQLAlchemy models validated')"
 
 # Set Python path
 ENV PYTHONPATH=/app
