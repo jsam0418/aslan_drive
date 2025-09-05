@@ -33,7 +33,7 @@ def main():
     parser = argparse.ArgumentParser(description="Aslan Drive Development Helper")
     parser.add_argument("command", choices=[
         "setup", "build", "test-basic", "docker-build", 
-        "docker-up", "docker-down", "schema-gen", "clean"
+        "docker-up", "docker-down", "alembic-migrate", "clean"
     ], help="Command to run")
     
     args = parser.parse_args()
@@ -51,7 +51,7 @@ def main():
     
     elif args.command == "build":
         success = True
-        success &= run_command("python3 tools/schema_generator.py", "Generating schema")
+        success &= run_command("python3 -c 'from models import Base, DailyOHLCV, Symbol; print(\"✅ SQLAlchemy models validated\")'", "Validating SQLAlchemy models")
         success &= run_command("python3 -m py_compile services/data_ingestion/main.py", "Validating data_ingestion")
         success &= run_command("python3 -m py_compile services/md_provider/main.py", "Validating md_provider")
         success &= run_command("python3 -m py_compile services/health_check/main.py", "Validating health_check")
@@ -80,15 +80,15 @@ def main():
         if success:
             print("\n🛑 Services stopped")
     
-    elif args.command == "schema-gen":
-        success = run_command("python3 tools/schema_generator.py", "Generating schema files")
+    elif args.command == "alembic-migrate":
+        success = run_command("alembic upgrade head", "Running Alembic migrations")
         if success:
-            print("\n📋 Schema files generated in generated/")
+            print("\n📋 Database migrations completed")
     
     elif args.command == "clean":
         success = True
-        success &= run_command("rm -rf generated/*", "Cleaning generated files")
-        success &= run_command("mkdir -p generated", "Recreating generated directory")
+        success &= run_command("rm -rf __pycache__ **/__pycache__ *.pyc", "Cleaning Python cache files")
+        success &= run_command("find . -name '*.pyc' -delete", "Removing compiled Python files")
         if success:
             print("\n🧹 Cleanup complete")
 

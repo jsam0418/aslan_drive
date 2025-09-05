@@ -29,13 +29,14 @@ test: build ## Run all tests
 	python3 -m pytest tests/ -v
 
 check: build test ## Run full project validation (build + test + lint + typecheck)
-	python3 -m black --check --diff services/ tools/ tests/
-	python3 -m isort --check-only --diff services/ tools/ tests/
-	python3 -m mypy services/ tools/ --ignore-missing-imports
+	python3 -m black --check --diff services/ models/ tests/
+	python3 -m isort --check-only --diff services/ models/ tests/
+	python3 -m mypy services/ models/ --ignore-missing-imports
 
-clean: ## Clean generated files
-	rm -rf generated/*
-	mkdir -p generated
+clean: ## Clean temporary files
+	find . -name "*.pyc" -delete
+	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .mypy_cache/ .pytest_cache/
 
 format: ## Format code with black and isort
 	@which python3 > /dev/null || (echo "Python 3 not found" && exit 1)
@@ -78,18 +79,18 @@ db-reset: ## Reset database with fresh schema
 	docker-compose down -v
 	docker-compose up -d postgres
 	sleep 10
-	python3 tools/schema_generator.py
+	alembic upgrade head
 
 dev-setup: ## Set up development environment
 	python3 -m venv venv
 	./venv/bin/pip install -r requirements.txt
 	@echo "Virtual environment created. Activate with: source venv/bin/activate"
 
-schema-gen: ## Generate schema files
-	python3 tools/schema_generator.py
+alembic-migrate: ## Run Alembic migrations
+	alembic upgrade head
 
 # Quick development workflows
-dev: dev-setup schema-gen ## Set up development environment and generate schema
+dev: dev-setup alembic-migrate ## Set up development environment and run migrations
 
 quick-test: build test ## Quick build and test
 
