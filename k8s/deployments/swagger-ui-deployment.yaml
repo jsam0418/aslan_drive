@@ -28,9 +28,9 @@ spec:
           name: http
         env:
         - name: SWAGGER_JSON_URL
-          value: "http://aslan-postgrest-service:3000/"
+          value: "http://fisher:30300/"
         - name: API_URL
-          value: "http://aslan-postgrest-service:3000/"
+          value: "http://fisher:30300/"
         - name: BASE_URL
           value: "/"
         - name: DEEP_LINKING

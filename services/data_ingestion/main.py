@@ -71,15 +71,18 @@ def get_target_trade_date() -> date:
     return target_date
 
 
-def load_migration_sql() -> str:
-    """Load the migration SQL from generated files."""
-    migration_file = project_root / "generated" / "migration.sql"
-    if not migration_file.exists():
-        logger.error(f"Migration file not found: {migration_file}")
-        raise FileNotFoundError(f"Migration file not found: {migration_file}")
+def ensure_tables_exist(db_manager: DatabaseManager) -> bool:
+    """Ensure database tables exist using SQLAlchemy models."""
+    try:
+        from models.base import Base
 
-    with open(migration_file, "r") as f:
-        return f.read()
+        # Create all tables if they don't exist
+        Base.metadata.create_all(bind=db_manager.engine)
+        logger.info("Database tables created/verified successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to create tables: {e}")
+        return False
 
 
 def main():
@@ -95,11 +98,10 @@ def main():
         logger.error("Database connection failed. Exiting.")
         sys.exit(1)
 
-    # Run migration (idempotent)
-    logger.info("Running database migration...")
-    migration_sql = load_migration_sql()
-    if not db_manager.execute_migration(migration_sql):
-        logger.error("Database migration failed. Exiting.")
+    # Ensure tables exist (idempotent)
+    logger.info("Ensuring database tables exist...")
+    if not ensure_tables_exist(db_manager):
+        logger.error("Database table creation failed. Exiting.")
         sys.exit(1)
 
     # Initialize mock data generator

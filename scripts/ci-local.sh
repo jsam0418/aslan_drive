@@ -43,7 +43,7 @@ fi
 print_success "Python 3 found"
 
 # Check if we're in the right directory
-if [[ ! -f "schemas/market_data.json" ]]; then
+if [[ ! -f "models/base.py" ]]; then
     print_error "Run this script from the project root directory"
 fi
 print_success "Project directory confirmed"
@@ -58,29 +58,29 @@ python3 -m black --version >/dev/null 2>&1 || {
 # 1. Code Quality and Testing (mirrors test-and-quality job)
 print_section "Code Quality and Testing"
 
-# Generate schema files
-echo "🔧 Generating schema files..."
-python3 tools/schema_generator.py || print_error "Schema generation failed"
-print_success "Schema generation completed"
-
-# Check if generated files exist
-if [[ ! -f "generated/migration.sql" ]]; then
-    print_error "Generated files not found"
-fi
+# Validate SQLAlchemy models
+echo "🔧 Validating SQLAlchemy models..."
+python3 -c "from models import Base, DailyOHLCV, Symbol; print('✅ SQLAlchemy models imported successfully')" || print_error "SQLAlchemy model validation failed"
+print_success "SQLAlchemy model validation completed"
 
 # Run code formatting check
 echo "📝 Running code formatting check..."
-python3 -m black --check --diff services/ tools/ tests/ || print_error "Code formatting check failed - run 'make format'"
+python3 -m black --check --diff services/ models/ tests/ || print_error "Code formatting check failed - run 'make format'"
 print_success "Code formatting check passed"
 
 # Run import sorting check
 echo "📦 Running import sorting check..."
-python3 -m isort --check-only --diff services/ tools/ tests/ || print_error "Import sorting check failed - run 'make lint-fix'"
+python3 -m isort --check-only --diff services/ models/ tests/ || print_error "Import sorting check failed - run 'make lint-fix'"
 print_success "Import sorting check passed"
 
 # Run type checking
 echo "🔍 Running type checking..."
-python3 -m mypy services/ tools/ --ignore-missing-imports || print_error "Type checking failed"
+# Use venv mypy if available, otherwise system python3
+if [[ -f "./venv/bin/python" ]]; then
+    ./venv/bin/python -m mypy services/ models/ --ignore-missing-imports || print_error "Type checking failed"
+else
+    python3 -m mypy services/ models/ --ignore-missing-imports || print_error "Type checking failed"
+fi
 print_success "Type checking passed"
 
 # Run basic functionality tests
