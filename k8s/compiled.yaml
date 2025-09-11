@@ -417,9 +417,9 @@ spec:
       containers:
       - env:
         - name: SWAGGER_JSON_URL
-          value: http://aslan-postgrest-service:3000/
+          value: http://fisher:30300/
         - name: API_URL
-          value: http://aslan-postgrest-service:3000/
+          value: http://fisher:30300/
         - name: BASE_URL
           value: /
         - name: DEEP_LINKING
@@ -714,6 +714,9 @@ spec:
 
               echo "Old backups cleaned up"
               ls -la /backup/
+
+              # Signal completion for post-backup step
+              touch /shared/backup-completed
             env:
             - name: POSTGRES_HOST
               value: postgres
@@ -730,6 +733,68 @@ spec:
               value: America/New_York
             image: postgres:15
             name: db-backup
+            volumeMounts:
+            - mountPath: /backup
+              name: backup-storage
+            - mountPath: /shared
+              name: shared-data
+          - command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              # Wait for backup to complete
+              while [ ! -f /shared/backup-completed ]; do
+                echo "Waiting for backup to complete..."
+                sleep 5
+              done
+
+              echo "Backup completed, running post-backup migration verification..."
+              python3 -m services.db_migration.main
+
+              echo "Creating final post-migration backup..."
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+              FINAL_BACKUP="/backup/aslan_drive_post_migration_${BACKUP_DATE}.sql"
+
+              # Create post-migration backup
+              pg_dump \
+                --host=$POSTGRES_HOST \
+                --port=5432 \
+                --username=$POSTGRES_USER \
+                --dbname=$POSTGRES_DB \
+                --verbose \
+                --clean \
+                --create \
+                --if-exists \
+                --file="${FINAL_BACKUP}"
+
+              # Compress the final backup
+              gzip "${FINAL_BACKUP}"
+
+              echo "Post-migration backup completed successfully"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: database-url
+                  name: aslan-drive-secrets
+            - name: MIGRATION_COMMAND
+              value: check
+            - name: POSTGRES_HOST
+              value: postgres
+            - name: POSTGRES_DB
+              value: aslan_drive
+            - name: POSTGRES_USER
+              value: trader
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: postgres-password
+                  name: aslan-drive-secrets
+            image: ghcr.io/jsam0418/aslan_drive/db-migration:latest
+            imagePullPolicy: Always
+            name: post-backup
             resources:
               limits:
                 cpu: 200m
@@ -740,11 +805,37 @@ spec:
             volumeMounts:
             - mountPath: /backup
               name: backup-storage
+            - mountPath: /shared
+              name: shared-data
+          initContainers:
+          - command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting pre-backup database migration..."
+              python3 -m services.db_migration.main
+              echo "Pre-backup migration completed"
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: database-url
+                  name: aslan-drive-secrets
+            - name: MIGRATION_COMMAND
+              value: upgrade
+            - name: LOG_LEVEL
+              value: info
+            image: ghcr.io/jsam0418/aslan_drive/db-migration:latest
+            imagePullPolicy: Always
+            name: pre-backup
           restartPolicy: OnFailure
           volumes:
           - name: backup-storage
             persistentVolumeClaim:
               claimName: db-backup-pvc
+          - emptyDir: {}
+            name: shared-data
   schedule: 0 4 * * 6
   successfulJobsHistoryLimit: 4
   timeZone: UTC
